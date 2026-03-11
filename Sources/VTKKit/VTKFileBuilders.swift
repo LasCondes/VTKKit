@@ -93,7 +93,8 @@ public extension VTKFile {
         polygons: [[Int32]],
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
-        options: VTKXMLFileOptions = .init()
+        options: VTKXMLFileOptions = .init(),
+        strategy: PolygonTriangulationStrategy = .fan
     ) throws -> VTKFile {
         VTKFile(
             polyData: try PolyData.triangulatedPolygonMesh(
@@ -101,9 +102,27 @@ public extension VTKFile {
                 polygons: polygons,
                 pointData: pointData,
                 fieldData: fieldData,
-                format: options.dataArrayFormat
+                format: options.dataArrayFormat,
+                strategy: strategy
             ),
             options: options
+        )
+    }
+
+    static func robustTriangulatedPolygonMesh<PointScalar: VTKFloatingPointScalarValue>(
+        points: [PointScalar],
+        polygons: [[Int32]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        options: VTKXMLFileOptions = .init()
+    ) throws -> VTKFile {
+        try triangulatedPolygonMesh(
+            points: points,
+            polygons: polygons,
+            pointData: pointData,
+            fieldData: fieldData,
+            options: options,
+            strategy: .earClipping
         )
     }
 }

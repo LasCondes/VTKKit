@@ -430,6 +430,48 @@ final class VTKWriterTests: XCTestCase {
         XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6</DataArray>"))
     }
 
+    func testRobustTriangulatedPolygonMeshHandlesConcavePolygon() throws {
+        let polyData = try PolyData.robustTriangulatedPolygonMesh(
+            points: [
+                0.0 as Float, 0.0, 0.0,
+                2.0, 0.0, 0.0,
+                2.0, 1.0, 0.0,
+                1.0, 0.4, 0.0,
+                0.0, 1.0, 0.0,
+            ],
+            polygons: [[0 as Int32, 1, 2, 3, 4]],
+            format: .ascii
+        )
+        let data = try VTKWriter.encode(VTKFile(polyData: polyData))
+        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("NumberOfPolys=\"3\""))
+        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6 9</DataArray>"))
+        XCTAssertFalse(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 0 2 3 0 3 4</DataArray>"))
+    }
+
+    func testRobustTriangulatedPolygonMeshRejectsSelfIntersectingPolygon() throws {
+        XCTAssertThrowsError(
+            try PolyData.robustTriangulatedPolygonMesh(
+                points: [
+                    0.0 as Float, 0.0, 0.0,
+                    1.0, 1.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    1.0, 0.0, 0.0,
+                ],
+                polygons: [[0 as Int32, 1, 2, 3]],
+                format: .ascii
+            )
+        ) { error in
+            guard case let VTKWriter.Error.invalidCellLayout(datasetPath, reason) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+
+            XCTAssertTrue(datasetPath.contains("triangulatedPolygonMesh"))
+            XCTAssertFalse(reason.isEmpty)
+        }
+    }
+
     func testPVDSeriesBuilder() throws {
         let pvd = try PVDFile.series(
             files: ["frame_0.vtp", "frame_1.vtp"],
@@ -443,6 +485,35 @@ final class VTKWriterTests: XCTestCase {
 
         XCTAssertTrue(xml.contains("<DataSet timestep=\"0.0\" group=\"dynamic\" part=\"0\" file=\"frame_0.vtp\" />"))
         XCTAssertTrue(xml.contains("<DataSet timestep=\"1.0\" group=\"dynamic\" part=\"0\" file=\"frame_1.vtp\" />"))
+    }
+
+    func testPVDSeriesBuilderSortsMultipleGroupsByTimestep() throws {
+        let pvd = try PVDFile.series(
+            groups: [
+                .init(
+                    group: "static",
+                    files: ["static.vtp", "static.vtp"],
+                    timesteps: [0.0, 1.0],
+                    part: 0
+                ),
+                .init(
+                    group: "dynamic",
+                    files: ["frame_0.vtp", "frame_1.vtp"],
+                    timesteps: [0.0, 1.0],
+                    part: 0
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            pvd.collection.dataSet.map { "\($0.timestep):\($0.group):\($0.file)" },
+            [
+                "0.0:static:static.vtp",
+                "0.0:dynamic:frame_0.vtp",
+                "1.0:static:static.vtp",
+                "1.0:dynamic:frame_1.vtp",
+            ]
+        )
     }
 
     func testPVDSeriesWriterAppendsAndLoadsExistingDocument() async throws {

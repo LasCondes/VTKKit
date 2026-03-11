@@ -23,6 +23,7 @@ VTKKit currently supports a focused subset of the VTK XML ecosystem:
 - Explicit `uncheckedType:` escape hatches when raw VTK type strings are unavoidable
 - Low-copy `DataArray` construction from `ContiguousArray`, `UnsafeBufferPointer`, and `Data`
 - High-level builders for point clouds, triangle meshes, polygon meshes, polyhedron cells, and PVD time series
+- Optional ear-clipping triangulation for simple planar concave polygons
 - File-level builders driven by `VTKXMLFileOptions`
 - PVD collection (`.pvd`) meta-files that reference VTK XML datasets
 - Incremental `.pvd` mutation through `PVDSeriesWriter`
@@ -144,6 +145,18 @@ let triangulatedFile = try VTKFile.triangulatedPolygonMesh(
         0.0, 1.0, 0.0,
     ],
     polygons: [[0, 1, 2, 3]],
+    options: .init(dataArrayFormat: .ascii)
+)
+
+let robustTriangulatedFile = try VTKFile.robustTriangulatedPolygonMesh(
+    points: [
+        0.0 as Float, 0.0, 0.0,
+        2.0, 0.0, 0.0,
+        2.0, 1.0, 0.0,
+        1.0, 0.4, 0.0,
+        0.0, 1.0, 0.0,
+    ],
+    polygons: [[0, 1, 2, 3, 4]],
     options: .init(dataArrayFormat: .ascii)
 )
 ```
@@ -282,6 +295,30 @@ let collection = try PVDFile.series(
 try VTKWriter.write(collection, to: URL(fileURLWithPath: "series.pvd"))
 ```
 
+### Build a globally timestep-sorted multi-group `.pvd`
+
+```swift
+import Foundation
+import VTKKit
+
+let collection = try PVDFile.series(
+    groups: [
+        .init(
+            group: "static",
+            files: ["static.vtp", "static.vtp"],
+            timesteps: [0.0, 1.0],
+            part: 0
+        ),
+        .init(
+            group: "dynamic",
+            files: ["frame_0000.vtp", "frame_0001.vtp"],
+            timesteps: [0.0, 1.0],
+            part: 0
+        ),
+    ]
+)
+```
+
 ### Append to a `.pvd` series incrementally
 
 ```swift
@@ -311,11 +348,18 @@ try await writer.append(file: "frame_0001.vtp", timestep: 1.0, group: "default",
   appended arrays. The package currently supports `UInt32` and `UInt64`.
 - `VTKXMLFileOptions` gives one place to control `byteOrder`, `headerType`,
   `compression`, and `dataArrayFormat` for higher-level file builders.
+- `PVDFile.series(groups:)` merges multiple groups and sorts the combined
+  collection by timestep while preserving the caller's group order as the
+  tie-breaker for identical timesteps.
 - `.pvtp` and `.pvtu` files describe piece metadata and source files. The piece
   datasets themselves are still ordinary `.vtp` and `.vtu` files.
 - `PVDSeriesWriter` appends by truncating the closing footer and writing new
   `<DataSet />` lines in place when the file uses the package's canonical PVD
   layout, falling back to a full rewrite only when needed.
+- `triangulatedPolygonMesh` still offers the fast first-vertex fan path via
+  `strategy: .fan`. `robustTriangulatedPolygonMesh` uses ear clipping for
+  simple planar polygons without holes, and rejects self-intersecting or
+  non-planar input instead of emitting invalid triangles.
 - Validation catches common exporter mistakes such as wrong component counts,
   tuple-count mismatches, and inconsistent cell connectivity/offset arrays.
 - `Codable` is useful for testing, intermediate representations, and persistence

@@ -518,7 +518,8 @@ public extension PolyData {
         polygons: [[Int32]],
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
-        format: DataArrayFormat = .ascii
+        format: DataArrayFormat = .ascii,
+        strategy: PolygonTriangulationStrategy = .fan
     ) throws -> PolyData {
         try triangulatedPolygonMesh(
             points: points,
@@ -526,7 +527,8 @@ public extension PolyData {
             pointData: pointData,
             fieldData: fieldData,
             format: format,
-            indexType: Int32.self
+            indexType: Int32.self,
+            strategy: strategy
         )
     }
 
@@ -539,10 +541,13 @@ public extension PolyData {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
-        indexType: IndexScalar.Type
+        indexType: IndexScalar.Type,
+        strategy: PolygonTriangulationStrategy = .fan
     ) throws -> PolyData {
         let triangles = try triangulatedPolygons(
             polygons: polygons,
+            points: points,
+            strategy: strategy,
             datasetPath: "PolyData.triangulatedPolygonMesh/Polys"
         )
         return try triangleMesh(
@@ -552,6 +557,45 @@ public extension PolyData {
             fieldData: fieldData,
             format: format,
             indexType: indexType
+        )
+    }
+
+    static func robustTriangulatedPolygonMesh<PointScalar: VTKFloatingPointScalarValue>(
+        points: [PointScalar],
+        polygons: [[Int32]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii
+    ) throws -> PolyData {
+        try triangulatedPolygonMesh(
+            points: points,
+            polygons: polygons,
+            pointData: pointData,
+            fieldData: fieldData,
+            format: format,
+            strategy: .earClipping
+        )
+    }
+
+    static func robustTriangulatedPolygonMesh<
+        PointScalar: VTKFloatingPointScalarValue,
+        IndexScalar: VTKIntegerScalarValue
+    >(
+        points: [PointScalar],
+        polygons: [[IndexScalar]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii,
+        indexType: IndexScalar.Type
+    ) throws -> PolyData {
+        try triangulatedPolygonMesh(
+            points: points,
+            polygons: polygons,
+            pointData: pointData,
+            fieldData: fieldData,
+            format: format,
+            indexType: indexType,
+            strategy: .earClipping
         )
     }
 }
@@ -631,6 +675,25 @@ public extension UnstructuredGrid {
 }
 
 public extension PVDFile {
+    struct SeriesGroup: Sendable, Equatable, Codable {
+        public var group: String
+        public var part: Int
+        public var files: [String]
+        public var timesteps: [Double]
+
+        public init(
+            group: String,
+            files: [String],
+            timesteps: [Double],
+            part: Int = 1
+        ) {
+            self.group = group
+            self.files = files
+            self.timesteps = timesteps
+            self.part = part
+        }
+    }
+
     static func series(
         files: [String],
         timesteps: [Double],
@@ -650,6 +713,48 @@ public extension PVDFile {
                 }
             )
         )
+    }
+
+    static func series(groups: [SeriesGroup]) throws -> PVDFile {
+        var indexedSeries: [(groupIndex: Int, itemIndex: Int, dataSet: PVDDataSet)] = []
+
+        for (groupIndex, group) in groups.enumerated() {
+            guard group.files.count == group.timesteps.count else {
+                throw VTKWriter.Error.invalidSeriesDefinition(
+                    reason: "files.count (\(group.files.count)) must match timesteps.count (\(group.timesteps.count)) for group '\(group.group)'."
+                )
+            }
+
+            indexedSeries.append(
+                contentsOf: zip(group.files, group.timesteps).enumerated().map { itemIndex, pair in
+                    let (file, timestep) = pair
+                    return (
+                        groupIndex: groupIndex,
+                        itemIndex: itemIndex,
+                        dataSet: PVDDataSet(
+                            group: group.group,
+                            file: file,
+                            timestep: timestep,
+                            part: group.part
+                        )
+                    )
+                }
+            )
+        }
+
+        let sortedDataSets = indexedSeries
+            .sorted { lhs, rhs in
+                if lhs.dataSet.timestep != rhs.dataSet.timestep {
+                    return lhs.dataSet.timestep < rhs.dataSet.timestep
+                }
+                if lhs.groupIndex != rhs.groupIndex {
+                    return lhs.groupIndex < rhs.groupIndex
+                }
+                return lhs.itemIndex < rhs.itemIndex
+            }
+            .map(\.dataSet)
+
+        return PVDFile(collection: .init(dataSet: sortedDataSets))
     }
 }
 
@@ -956,7 +1061,30 @@ private func regroupPolygons<IndexScalar: VTKIntegerScalarValue>(
     return polygons
 }
 
-private func triangulatedPolygons<IndexScalar: VTKIntegerScalarValue>(
+private func triangulatedPolygons<
+    PointScalar: VTKFloatingPointScalarValue,
+    IndexScalar: VTKIntegerScalarValue
+>(
+    polygons: [[IndexScalar]],
+    points: [PointScalar],
+    strategy: PolygonTriangulationStrategy,
+    datasetPath: String
+) throws -> [IndexScalar] {
+    if strategy == .fan {
+        return try fanTriangulatedPolygons(
+            polygons: polygons,
+            datasetPath: datasetPath
+        )
+    }
+
+    return try earClippedPolygons(
+        polygons: polygons,
+        points: points,
+        datasetPath: datasetPath
+    )
+}
+
+private func fanTriangulatedPolygons<IndexScalar: VTKIntegerScalarValue>(
     polygons: [[IndexScalar]],
     datasetPath: String
 ) throws -> [IndexScalar] {
