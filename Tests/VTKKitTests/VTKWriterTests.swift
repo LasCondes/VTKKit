@@ -780,11 +780,8 @@ struct VTKWriterTests {
         #expect(numberOfComponents == 3)
     }
 
-    @Test
+    @Test(.enabled(if: hasPythonVTK(), "Python vtk runtime is not installed"))
     func compatibilityWithVTKPythonReadersWhenAvailable() throws {
-        guard hasPythonVTK() else {
-            return
-        }
 
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -857,11 +854,9 @@ struct VTKWriterTests {
         )
     }
 
-    @Test
+    @Test(.enabled(if: findExecutable(named: "pvpython") != nil, "pvpython is not installed"))
     func compatibilityWithParaViewPVDReaderWhenAvailable() throws {
-        guard let pvpythonPath = findExecutable(named: "pvpython") else {
-            return
-        }
+        let pvpythonPath = findExecutable(named: "pvpython")!
 
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
