@@ -1,6 +1,19 @@
-.build
-.swiftpm
-.DS_Store
-xcuserdata/
-*.xcodeproj
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
 
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+._*
+
+# Editor
+*.swp
+*~
