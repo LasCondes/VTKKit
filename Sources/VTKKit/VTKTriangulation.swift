@@ -1,7 +1,7 @@
 import Foundation
 import simd
 
-public enum PolygonTriangulationStrategy: String, Sendable, Codable, CaseIterable {
+@frozen public enum PolygonTriangulationStrategy: String, Sendable, Codable, CaseIterable {
     case fan
     case earClipping
 }
@@ -13,7 +13,7 @@ func earClippedPolygons<
     polygons: [[IndexScalar]],
     points: [PointScalar],
     datasetPath: String
-) throws -> [IndexScalar] {
+) throws(VTKWriter.Error) -> [IndexScalar] {
     guard points.count.isMultiple(of: 3) else {
         throw VTKWriter.Error.invalidComponentCount(
             arrayName: "Points",
@@ -67,7 +67,7 @@ private func normalizedPolygonIndices<IndexScalar: VTKIntegerScalarValue>(
     _ polygon: [IndexScalar],
     pointCount: Int,
     datasetPath: String
-) throws -> [IndexScalar] {
+) throws(VTKWriter.Error) -> [IndexScalar] {
     var normalized = polygon
     if normalized.count > 3, normalized.first == normalized.last {
         normalized.removeLast()
@@ -96,7 +96,7 @@ private func projectedPolygon<IndexScalar: VTKIntegerScalarValue>(
     _ polygon: [IndexScalar],
     pointPositions: [SIMD3<Double>],
     datasetPath: String
-) throws -> ProjectedPolygon<IndexScalar> {
+) throws(VTKWriter.Error) -> ProjectedPolygon<IndexScalar> {
     let polygon3D = polygon.map { pointPositions[Int(exactly: $0)!] }
     let normal = newellNormal(polygon3D)
     let normalLength = simd_length(normal)
@@ -145,7 +145,7 @@ private func projectedPolygon<IndexScalar: VTKIntegerScalarValue>(
 private func earClip<IndexScalar: VTKIntegerScalarValue>(
     _ polygon: ProjectedPolygon<IndexScalar>,
     datasetPath: String
-) throws -> [IndexScalar] {
+) throws(VTKWriter.Error) -> [IndexScalar] {
     var remaining = Array(polygon.indices.indices)
     var triangles: [IndexScalar] = []
     triangles.reserveCapacity(max(0, (polygon.indices.count - 2) * 3))

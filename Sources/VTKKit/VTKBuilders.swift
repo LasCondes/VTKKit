@@ -24,7 +24,7 @@ public extension DataArray {
         format: DataArrayFormat = .ascii,
         numberOfComponents: Int,
         values: [Scalar]
-    ) throws {
+    ) throws(VTKWriter.Error) {
         if format == .ascii {
             self.init(
                 uncheckedType: Scalar.vtkScalarType.rawValue,
@@ -50,7 +50,7 @@ public extension DataArray {
         format: DataArrayFormat = .appended,
         numberOfComponents: Int,
         contiguousValues: ContiguousArray<Scalar>
-    ) throws {
+    ) throws(VTKWriter.Error) {
         if format == .ascii {
             try self.init(
                 name: name,
@@ -75,7 +75,7 @@ public extension DataArray {
         format: DataArrayFormat = .appended,
         numberOfComponents: Int,
         buffer: UnsafeBufferPointer<Scalar>
-    ) throws {
+    ) throws(VTKWriter.Error) {
         if format == .ascii {
             try self.init(
                 name: name,
@@ -103,7 +103,7 @@ public extension DataArray {
         data: Data,
         valueCount: Int,
         byteOrder: ByteOrder = .native
-    ) throws {
+    ) throws(VTKWriter.Error) {
         self.init(
             uncheckedType: scalarType.vtkScalarType.rawValue,
             name: name,
@@ -117,7 +117,7 @@ public extension DataArray {
     static func points<Scalar: VTKFloatingPointScalarValue>(
         _ values: [Scalar],
         format: DataArrayFormat = .ascii
-    ) throws -> DataArray {
+    ) throws(VTKWriter.Error) -> DataArray {
         try DataArray(
             name: "Points",
             format: format,
@@ -129,7 +129,7 @@ public extension DataArray {
     static func points<Scalar: VTKFloatingPointScalarValue>(
         contiguousValues: ContiguousArray<Scalar>,
         format: DataArrayFormat = .appended
-    ) throws -> DataArray {
+    ) throws(VTKWriter.Error) -> DataArray {
         try DataArray(
             name: "Points",
             format: format,
@@ -141,7 +141,7 @@ public extension DataArray {
     static func points<Scalar: VTKFloatingPointScalarValue>(
         buffer: UnsafeBufferPointer<Scalar>,
         format: DataArrayFormat = .appended
-    ) throws -> DataArray {
+    ) throws(VTKWriter.Error) -> DataArray {
         try DataArray(
             name: "Points",
             format: format,
@@ -196,7 +196,7 @@ public extension DataArray {
         name: String,
         values: [Scalar],
         format: DataArrayFormat = .ascii
-    ) throws -> DataArray {
+    ) throws(VTKWriter.Error) -> DataArray {
         try DataArray(
             name: name,
             format: format,
@@ -209,7 +209,7 @@ public extension DataArray {
         name: String,
         contiguousValues: ContiguousArray<Scalar>,
         format: DataArrayFormat = .appended
-    ) throws -> DataArray {
+    ) throws(VTKWriter.Error) -> DataArray {
         try DataArray(
             name: name,
             format: format,
@@ -222,7 +222,7 @@ public extension DataArray {
         name: String,
         buffer: UnsafeBufferPointer<Scalar>,
         format: DataArrayFormat = .appended
-    ) throws -> DataArray {
+    ) throws(VTKWriter.Error) -> DataArray {
         try DataArray(
             name: name,
             format: format,
@@ -305,7 +305,7 @@ public extension PolyData {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try pointCloud(
             points: points,
             pointData: pointData,
@@ -324,7 +324,7 @@ public extension PolyData {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         let datasetPath = "PolyData.pointCloud"
         guard points.count.isMultiple(of: 3) else {
             throw VTKWriter.Error.invalidComponentCount(
@@ -336,11 +336,30 @@ public extension PolyData {
         }
 
         let pointCount = points.count / 3
-        let connectivity: [IndexScalar] = try (0..<pointCount).map {
-            try exactInteger($0, as: IndexScalar.self, datasetPath: datasetPath + "/Verts/connectivity")
+        var connectivity: [IndexScalar] = []
+        connectivity.reserveCapacity(pointCount)
+        for pointIndex in 0..<pointCount {
+            try connectivity.append(
+                exactInteger(
+                    pointIndex,
+                    as: IndexScalar.self,
+                    datasetPath: datasetPath + "/Verts/connectivity"
+                )
+            )
         }
-        let offsets: [IndexScalar] = try (1...pointCount).map {
-            try exactInteger($0, as: IndexScalar.self, datasetPath: datasetPath + "/Verts/offsets")
+
+        var offsets: [IndexScalar] = []
+        offsets.reserveCapacity(pointCount)
+        if pointCount > 0 {
+            for offset in 1...pointCount {
+                try offsets.append(
+                    exactInteger(
+                        offset,
+                        as: IndexScalar.self,
+                        datasetPath: datasetPath + "/Verts/offsets"
+                    )
+                )
+            }
         }
 
         return PolyData(
@@ -366,7 +385,7 @@ public extension PolyData {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try triangleMesh(
             points: points,
             triangleIndices: triangleIndices,
@@ -387,7 +406,7 @@ public extension PolyData {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         let datasetPath = "PolyData.triangleMesh"
         guard points.count.isMultiple(of: 3) else {
             throw VTKWriter.Error.invalidComponentCount(
@@ -406,8 +425,18 @@ public extension PolyData {
         }
 
         let triangleCount = triangleIndices.count / 3
-        let offsets: [IndexScalar] = try (1...triangleCount).map {
-            try exactInteger($0 * 3, as: IndexScalar.self, datasetPath: datasetPath + "/Polys/offsets")
+        var offsets: [IndexScalar] = []
+        offsets.reserveCapacity(triangleCount)
+        if triangleCount > 0 {
+            for triangleIndex in 1...triangleCount {
+                try offsets.append(
+                    exactInteger(
+                        triangleIndex * 3,
+                        as: IndexScalar.self,
+                        datasetPath: datasetPath + "/Polys/offsets"
+                    )
+                )
+            }
         }
 
         return PolyData(
@@ -433,7 +462,7 @@ public extension PolyData {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try polygonMesh(
             points: points,
             polygons: polygons,
@@ -454,7 +483,7 @@ public extension PolyData {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         let datasetPath = "PolyData.polygonMesh"
         guard points.count.isMultiple(of: 3) else {
             throw VTKWriter.Error.invalidComponentCount(
@@ -498,7 +527,7 @@ public extension PolyData {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try polygonMesh(
             points: points,
             polygons: try regroupPolygons(
@@ -520,7 +549,7 @@ public extension PolyData {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         strategy: PolygonTriangulationStrategy = .fan
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try triangulatedPolygonMesh(
             points: points,
             polygons: polygons,
@@ -543,7 +572,7 @@ public extension PolyData {
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type,
         strategy: PolygonTriangulationStrategy = .fan
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         let triangles = try triangulatedPolygons(
             polygons: polygons,
             points: points,
@@ -566,7 +595,7 @@ public extension PolyData {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try triangulatedPolygonMesh(
             points: points,
             polygons: polygons,
@@ -587,7 +616,7 @@ public extension PolyData {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type
-    ) throws -> PolyData {
+    ) throws(VTKWriter.Error) -> PolyData {
         try triangulatedPolygonMesh(
             points: points,
             polygons: polygons,
@@ -604,7 +633,7 @@ public extension Cells {
     static func polyhedra<IndexScalar: VTKIntegerScalarValue>(
         _ cells: [[[IndexScalar]]],
         format: DataArrayFormat = .ascii
-    ) throws -> Cells {
+    ) throws(VTKWriter.Error) -> Cells {
         let encodedCells = try encodePolyhedronCells(cells, datasetPath: "UnstructuredGrid.polyhedronMesh/Cells")
         return Cells(
             dataArray: [
@@ -626,7 +655,7 @@ public extension UnstructuredGrid {
         cellData: CellData? = nil,
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii
-    ) throws -> UnstructuredGrid {
+    ) throws(VTKWriter.Error) -> UnstructuredGrid {
         try polyhedronMesh(
             points: points,
             cells: cells,
@@ -649,7 +678,7 @@ public extension UnstructuredGrid {
         fieldData: FieldData? = nil,
         format: DataArrayFormat = .ascii,
         indexType: IndexScalar.Type
-    ) throws -> UnstructuredGrid {
+    ) throws(VTKWriter.Error) -> UnstructuredGrid {
         let datasetPath = "UnstructuredGrid.polyhedronMesh"
         guard points.count.isMultiple(of: 3) else {
             throw VTKWriter.Error.invalidComponentCount(
@@ -699,7 +728,7 @@ public extension PVDFile {
         timesteps: [Double],
         group: String = "default",
         part: Int = 1
-    ) throws -> PVDFile {
+    ) throws(VTKWriter.Error) -> PVDFile {
         guard files.count == timesteps.count else {
             throw VTKWriter.Error.invalidSeriesDefinition(
                 reason: "files.count (\(files.count)) must match timesteps.count (\(timesteps.count))."
@@ -715,7 +744,7 @@ public extension PVDFile {
         )
     }
 
-    static func series(groups: [SeriesGroup]) throws -> PVDFile {
+    static func series(groups: [SeriesGroup]) throws(VTKWriter.Error) -> PVDFile {
         var indexedSeries: [(groupIndex: Int, itemIndex: Int, dataSet: PVDDataSet)] = []
 
         for (groupIndex, group) in groups.enumerated() {
@@ -759,14 +788,14 @@ public extension PVDFile {
 }
 
 extension PolyData {
-    func validate(at datasetPath: String) throws {
+    func validate(at datasetPath: String) throws(VTKWriter.Error) {
         try fieldData?.validate(at: datasetPath + "/FieldData")
         try piece.validate(at: datasetPath + "/Piece")
     }
 }
 
 extension FieldData {
-    func validate(at datasetPath: String) throws {
+    func validate(at datasetPath: String) throws(VTKWriter.Error) {
         for array in dataArray {
             _ = try array.validatedTupleCount(at: datasetPath)
         }
@@ -774,7 +803,7 @@ extension FieldData {
 }
 
 extension Piece {
-    func validate(at datasetPath: String) throws {
+    func validate(at datasetPath: String) throws(VTKWriter.Error) {
         let pointTupleCount = try points.validate(
             expectedPointCount: numberOfPoints,
             datasetPath: datasetPath + "/Points"
@@ -797,7 +826,7 @@ extension Piece {
 
 extension Points {
     @discardableResult
-    func validate(expectedPointCount: Int, datasetPath: String) throws -> Int {
+    func validate(expectedPointCount: Int, datasetPath: String) throws(VTKWriter.Error) -> Int {
         guard dataArray.numberOfComponents == 3 else {
             throw VTKWriter.Error.invalidComponentCount(
                 arrayName: dataArray.name,
@@ -822,7 +851,7 @@ extension Points {
 }
 
 extension PointData {
-    func validate(expectedTupleCount: Int, datasetPath: String) throws {
+    func validate(expectedTupleCount: Int, datasetPath: String) throws(VTKWriter.Error) {
         for array in dataArray {
             let tupleCount = try array.validatedTupleCount(at: datasetPath)
             guard tupleCount == expectedTupleCount else {
@@ -838,13 +867,13 @@ extension PointData {
 }
 
 extension Polys {
-    func validate(expectedCellCount: Int, datasetPath: String) throws {
+    func validate(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
         try validateCellTopology(expectedCellCount: expectedCellCount, datasetPath: datasetPath)
     }
 }
 
 extension Verts {
-    func validate(expectedCellCount: Int, datasetPath: String) throws {
+    func validate(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
         try validateCellTopology(expectedCellCount: expectedCellCount, datasetPath: datasetPath)
     }
 }
@@ -857,7 +886,7 @@ extension Polys: VTKCellTopologyValidating {}
 extension Verts: VTKCellTopologyValidating {}
 
 private extension VTKCellTopologyValidating {
-    func validateCellTopology(expectedCellCount: Int, datasetPath: String) throws {
+    func validateCellTopology(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
         guard let connectivity = dataArray.first(where: { $0.name == "connectivity" }) else {
             throw VTKWriter.Error.invalidCellLayout(
                 datasetPath: datasetPath,
@@ -912,11 +941,11 @@ extension DataArray {
         return values.split(whereSeparator: \.isWhitespace).count
     }
 
-    func validateComponentCount(at datasetPath: String) throws {
+    func validateComponentCount(at datasetPath: String) throws(VTKWriter.Error) {
         _ = try validatedTupleCount(at: datasetPath)
     }
 
-    func validatedTupleCount(at datasetPath: String) throws -> Int {
+    func validatedTupleCount(at datasetPath: String) throws(VTKWriter.Error) -> Int {
         guard let numberOfComponents else {
             return rawValueCount
         }
@@ -942,7 +971,7 @@ extension DataArray {
         return rawValueCount / numberOfComponents
     }
 
-    func integerValues(at datasetPath: String) throws -> [Int] {
+    func integerValues(at datasetPath: String) throws(VTKWriter.Error) -> [Int] {
         if let binaryStorage {
             guard let scalarType = VTKScalarType(rawValue: type) else {
                 throw VTKWriter.Error.unsupportedDataArrayType(arrayName: name, type: type)
@@ -952,26 +981,34 @@ extension DataArray {
                 from: binaryStorage,
                 arrayName: name
             )
-            return try renderedValues.split(whereSeparator: \.isWhitespace).map { token in
+            let tokens = renderedValues.split(whereSeparator: \.isWhitespace)
+            var integers: [Int] = []
+            integers.reserveCapacity(tokens.count)
+            for token in tokens {
                 guard let value = Int(token) else {
                     throw VTKWriter.Error.invalidCellLayout(
                         datasetPath: datasetPath,
                         reason: "Array '\(name)' contains non-integer token '\(token)'."
                     )
                 }
-                return value
+                integers.append(value)
             }
+            return integers
         }
 
-        return try values.split(whereSeparator: \.isWhitespace).map { token in
+        let tokens = values.split(whereSeparator: \.isWhitespace)
+        var integers: [Int] = []
+        integers.reserveCapacity(tokens.count)
+        for token in tokens {
             guard let value = Int(token) else {
                 throw VTKWriter.Error.invalidCellLayout(
                     datasetPath: datasetPath,
                     reason: "Array '\(name)' contains non-integer token '\(token)'."
                 )
             }
-            return value
+            integers.append(value)
         }
+        return integers
     }
 }
 
@@ -979,7 +1016,7 @@ private func exactInteger<Scalar: VTKIntegerScalarValue>(
     _ value: Int,
     as type: Scalar.Type,
     datasetPath: String
-) throws -> Scalar {
+) throws(VTKWriter.Error) -> Scalar {
     guard let converted = Scalar(exactly: value) else {
         throw VTKWriter.Error.numericOverflow(
             datasetPath: datasetPath,
@@ -994,7 +1031,7 @@ private func exactInteger<Scalar: VTKIntegerScalarValue>(
 private func flattenedPolygonConnectivity<IndexScalar: VTKIntegerScalarValue>(
     polygons: [[IndexScalar]],
     datasetPath: String
-) throws -> (connectivity: [IndexScalar], offsets: [IndexScalar]) {
+) throws(VTKWriter.Error) -> (connectivity: [IndexScalar], offsets: [IndexScalar]) {
     guard polygons.isEmpty == false else {
         return ([], [])
     }
@@ -1026,7 +1063,7 @@ private func regroupPolygons<IndexScalar: VTKIntegerScalarValue>(
     connectivity: [IndexScalar],
     polygonVertexCounts: [Int],
     datasetPath: String
-) throws -> [[IndexScalar]] {
+) throws(VTKWriter.Error) -> [[IndexScalar]] {
     var polygons: [[IndexScalar]] = []
     polygons.reserveCapacity(polygonVertexCounts.count)
 
@@ -1069,7 +1106,7 @@ private func triangulatedPolygons<
     points: [PointScalar],
     strategy: PolygonTriangulationStrategy,
     datasetPath: String
-) throws -> [IndexScalar] {
+) throws(VTKWriter.Error) -> [IndexScalar] {
     if strategy == .fan {
         return try fanTriangulatedPolygons(
             polygons: polygons,
@@ -1087,7 +1124,7 @@ private func triangulatedPolygons<
 private func fanTriangulatedPolygons<IndexScalar: VTKIntegerScalarValue>(
     polygons: [[IndexScalar]],
     datasetPath: String
-) throws -> [IndexScalar] {
+) throws(VTKWriter.Error) -> [IndexScalar] {
     var triangles: [IndexScalar] = []
     triangles.reserveCapacity(polygons.reduce(into: 0) { $0 += max(0, ($1.count - 2) * 3) })
 
@@ -1116,7 +1153,7 @@ private func fanTriangulatedPolygons<IndexScalar: VTKIntegerScalarValue>(
 private func encodePolyhedronCells<IndexScalar: VTKIntegerScalarValue>(
     _ cells: [[[IndexScalar]]],
     datasetPath: String
-) throws -> (
+) throws(VTKWriter.Error) -> (
     connectivity: [IndexScalar],
     offsets: [IndexScalar],
     faces: [IndexScalar],

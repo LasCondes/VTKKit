@@ -60,47 +60,47 @@ public enum VTKWriter {
         }
     }
 
-    public static func encode(_ file: VTKFile) throws -> Data {
+    public static func encode(_ file: VTKFile) throws(VTKWriter.Error) -> Data {
         try data(for: file)
     }
 
-    public static func encode(_ file: VTUFile) throws -> Data {
+    public static func encode(_ file: VTUFile) throws(VTKWriter.Error) -> Data {
         try data(for: file)
     }
 
-    public static func encode(_ file: PVTPFile) throws -> Data {
+    public static func encode(_ file: PVTPFile) throws(VTKWriter.Error) -> Data {
         try data(for: file)
     }
 
-    public static func encode(_ file: PVTUFile) throws -> Data {
+    public static func encode(_ file: PVTUFile) throws(VTKWriter.Error) -> Data {
         try data(for: file)
     }
 
-    public static func encode(_ file: PVDFile) throws -> Data {
+    public static func encode(_ file: PVDFile) throws(VTKWriter.Error) -> Data {
         try data(for: file)
     }
 
-    public static func write(_ file: VTKFile, to url: URL) throws {
+    public static func write(_ file: VTKFile, to url: URL) throws(VTKWriter.Error) {
         try writeStreaming(file, to: url)
     }
 
-    public static func write(_ file: VTUFile, to url: URL) throws {
+    public static func write(_ file: VTUFile, to url: URL) throws(VTKWriter.Error) {
         try writeStreaming(file, to: url)
     }
 
-    public static func write(_ file: PVTPFile, to url: URL) throws {
+    public static func write(_ file: PVTPFile, to url: URL) throws(VTKWriter.Error) {
         try writeData(encode(file), to: url)
     }
 
-    public static func write(_ file: PVTUFile, to url: URL) throws {
+    public static func write(_ file: PVTUFile, to url: URL) throws(VTKWriter.Error) {
         try writeData(encode(file), to: url)
     }
 
-    public static func write(_ file: PVDFile, to url: URL) throws {
+    public static func write(_ file: PVDFile, to url: URL) throws(VTKWriter.Error) {
         try writeData(encode(file), to: url)
     }
 
-    private static func data(for document: XMLDocumentRenderable) throws -> Data {
+    private static func data(for document: XMLDocumentRenderable) throws(VTKWriter.Error) -> Data {
         var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         try document.renderXML(into: &xml)
         guard let data = xml.data(using: .utf8) else {
@@ -109,7 +109,7 @@ public enum VTKWriter {
         return data
     }
 
-    private static func writeData(_ data: @autoclosure () throws -> Data, to url: URL) throws {
+    private static func writeData(_ data: @autoclosure () throws(VTKWriter.Error) -> Data, to url: URL) throws(VTKWriter.Error) {
         let directoryURL = url.deletingLastPathComponent()
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
@@ -128,7 +128,7 @@ public enum VTKWriter {
 }
 
 protocol XMLDocumentRenderable {
-    func renderXML(into xml: inout String) throws
+    func renderXML(into xml: inout String) throws(VTKWriter.Error)
 }
 
 enum XMLTag {

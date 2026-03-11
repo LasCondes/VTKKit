@@ -168,7 +168,7 @@ public extension PVTPFile {
         ghostLevel: Int = 0,
         version: String = "0.1",
         byteOrder: ByteOrder = .native
-    ) throws -> PVTPFile {
+    ) throws(VTKWriter.Error) -> PVTPFile {
         guard pieceSources.isEmpty == false else {
             throw VTKWriter.Error.invalidParallelDefinition(
                 reason: "pieceSources must contain at least one .vtp file."
@@ -201,7 +201,7 @@ public extension PVTUFile {
         ghostLevel: Int = 0,
         version: String = "0.1",
         byteOrder: ByteOrder = .native
-    ) throws -> PVTUFile {
+    ) throws(VTKWriter.Error) -> PVTUFile {
         guard pieceSources.isEmpty == false else {
             throw VTKWriter.Error.invalidParallelDefinition(
                 reason: "pieceSources must contain at least one .vtu file."
@@ -229,7 +229,7 @@ public extension PVTUFile {
 }
 
 extension PVTPFile: XMLDocumentRenderable {
-    func renderXML(into xml: inout String) throws {
+    func renderXML(into xml: inout String) throws(VTKWriter.Error) {
         XMLTag.open(
             "VTKFile",
             attributes: [
@@ -246,7 +246,7 @@ extension PVTPFile: XMLDocumentRenderable {
 }
 
 extension PVTUFile: XMLDocumentRenderable {
-    func renderXML(into xml: inout String) throws {
+    func renderXML(into xml: inout String) throws(VTKWriter.Error) {
         XMLTag.open(
             "VTKFile",
             attributes: [

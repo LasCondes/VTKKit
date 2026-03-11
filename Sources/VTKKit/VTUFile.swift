@@ -1,6 +1,6 @@
 import Foundation
 
-public enum VTKCellType: UInt8, Sendable, Codable, CaseIterable {
+@frozen public enum VTKCellType: UInt8, Sendable, Codable, CaseIterable {
     case vertex = 1
     case polyVertex = 2
     case line = 3
@@ -127,7 +127,7 @@ public extension UnstructuredGrid {
 }
 
 extension VTUFile: XMLDocumentRenderable {
-    func renderXML(into xml: inout String) throws {
+    func renderXML(into xml: inout String) throws(VTKWriter.Error) {
         try unstructuredGrid.validate(at: "UnstructuredGrid")
         var context = VTKXMLBinaryEncodingContext(
             byteOrder: byteOrder,
@@ -162,14 +162,14 @@ extension UnstructuredGrid {
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         XMLTag.open("UnstructuredGrid", into: &xml, indentLevel: indentLevel)
         try fieldData?.renderXML(into: &xml, indentLevel: indentLevel + 1, context: &context)
         try piece.renderXML(into: &xml, indentLevel: indentLevel + 1, context: &context)
         XMLTag.close("UnstructuredGrid", into: &xml, indentLevel: indentLevel)
     }
 
-    func validate(at datasetPath: String) throws {
+    func validate(at datasetPath: String) throws(VTKWriter.Error) {
         try fieldData?.validate(at: datasetPath + "/FieldData")
         try piece.validate(at: datasetPath + "/Piece")
     }
@@ -187,7 +187,7 @@ extension UnstructuredPiece {
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         XMLTag.open(
             "Piece",
             attributes: [
@@ -206,7 +206,7 @@ extension UnstructuredPiece {
         XMLTag.close("Piece", into: &xml, indentLevel: indentLevel)
     }
 
-    func validate(at datasetPath: String) throws {
+    func validate(at datasetPath: String) throws(VTKWriter.Error) {
         let pointTupleCount = try points.validate(
             expectedPointCount: numberOfPoints,
             datasetPath: datasetPath + "/Points"
@@ -236,7 +236,7 @@ extension CellData {
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         XMLTag.open(
             "CellData",
             attributes: [
@@ -252,7 +252,7 @@ extension CellData {
         XMLTag.close("CellData", into: &xml, indentLevel: indentLevel)
     }
 
-    func validate(expectedTupleCount: Int, datasetPath: String) throws {
+    func validate(expectedTupleCount: Int, datasetPath: String) throws(VTKWriter.Error) {
         for array in dataArray {
             let tupleCount = try array.validatedTupleCount(at: datasetPath)
             guard tupleCount == expectedTupleCount else {
@@ -276,7 +276,7 @@ extension Cells {
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         XMLTag.open("Cells", into: &xml, indentLevel: indentLevel)
         for element in dataArray {
             try element.renderXML(into: &xml, indentLevel: indentLevel + 1, context: &context)
@@ -284,7 +284,7 @@ extension Cells {
         XMLTag.close("Cells", into: &xml, indentLevel: indentLevel)
     }
 
-    func validate(expectedCellCount: Int, datasetPath: String) throws {
+    func validate(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
         guard let connectivity = dataArray.first(where: { $0.name == "connectivity" }) else {
             throw VTKWriter.Error.invalidCellLayout(
                 datasetPath: datasetPath,
@@ -416,7 +416,7 @@ private func validatePolyhedronFaces(
     connectivityValues: [Int],
     types: [Int],
     datasetPath: String
-) throws {
+) throws(VTKWriter.Error) {
     var faceCursor = 0
     var connectivityCursor = 0
 

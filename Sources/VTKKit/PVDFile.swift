@@ -31,7 +31,7 @@ public struct PVDFile: Sendable, Equatable, Codable {
 }
 
 extension PVDFile: XMLDocumentRenderable {
-    func renderXML(into xml: inout String) throws {
+    func renderXML(into xml: inout String) throws(VTKWriter.Error) {
         XMLTag.open(
             "VTKFile",
             attributes: [

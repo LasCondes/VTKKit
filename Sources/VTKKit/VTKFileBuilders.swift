@@ -38,7 +38,7 @@ public extension VTKFile {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         options: VTKXMLFileOptions = .init()
-    ) throws -> VTKFile {
+    ) throws(VTKWriter.Error) -> VTKFile {
         VTKFile(
             polyData: try PolyData.pointCloud(
                 points: points,
@@ -56,7 +56,7 @@ public extension VTKFile {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         options: VTKXMLFileOptions = .init()
-    ) throws -> VTKFile {
+    ) throws(VTKWriter.Error) -> VTKFile {
         VTKFile(
             polyData: try PolyData.triangleMesh(
                 points: points,
@@ -75,7 +75,7 @@ public extension VTKFile {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         options: VTKXMLFileOptions = .init()
-    ) throws -> VTKFile {
+    ) throws(VTKWriter.Error) -> VTKFile {
         VTKFile(
             polyData: try PolyData.polygonMesh(
                 points: points,
@@ -95,7 +95,7 @@ public extension VTKFile {
         fieldData: FieldData? = nil,
         options: VTKXMLFileOptions = .init(),
         strategy: PolygonTriangulationStrategy = .fan
-    ) throws -> VTKFile {
+    ) throws(VTKWriter.Error) -> VTKFile {
         VTKFile(
             polyData: try PolyData.triangulatedPolygonMesh(
                 points: points,
@@ -115,7 +115,7 @@ public extension VTKFile {
         pointData: PointData? = nil,
         fieldData: FieldData? = nil,
         options: VTKXMLFileOptions = .init()
-    ) throws -> VTKFile {
+    ) throws(VTKWriter.Error) -> VTKFile {
         try triangulatedPolygonMesh(
             points: points,
             polygons: polygons,
@@ -145,7 +145,7 @@ public extension VTUFile {
         cellData: CellData? = nil,
         fieldData: FieldData? = nil,
         options: VTKXMLFileOptions = .init()
-    ) throws -> VTUFile {
+    ) throws(VTKWriter.Error) -> VTUFile {
         VTUFile(
             unstructuredGrid: try UnstructuredGrid.polyhedronMesh(
                 points: points,
@@ -167,7 +167,7 @@ public extension VTKWriter {
         pieceFileNames: [String]? = nil,
         ghostLevel: Int = 0,
         options: VTKXMLFileOptions = .init()
-    ) throws -> PVTPFile {
+    ) throws(VTKWriter.Error) -> PVTPFile {
         guard let template = pieces.first else {
             throw Error.invalidParallelDefinition(reason: "pieces must contain at least one PolyData dataset.")
         }
@@ -201,7 +201,7 @@ public extension VTKWriter {
         pieceFileNames: [String]? = nil,
         ghostLevel: Int = 0,
         options: VTKXMLFileOptions = .init()
-    ) throws -> PVTUFile {
+    ) throws(VTKWriter.Error) -> PVTUFile {
         guard let template = pieces.first else {
             throw Error.invalidParallelDefinition(reason: "pieces must contain at least one UnstructuredGrid dataset.")
         }
@@ -234,7 +234,7 @@ public extension VTKWriter {
         pieceCount: Int,
         manifestURL: URL,
         extensionName: String
-    ) throws -> [String] {
+    ) throws(VTKWriter.Error) -> [String] {
         if let explicitNames {
             guard explicitNames.count == pieceCount else {
                 throw Error.invalidParallelDefinition(

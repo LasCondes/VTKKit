@@ -2,7 +2,7 @@ import Compression
 import Foundation
 
 public struct VTKCompression: Sendable, Equatable, Codable {
-    public enum Algorithm: String, Sendable, Codable, CaseIterable {
+    @frozen public enum Algorithm: String, Sendable, Codable, CaseIterable {
         case zlib = "vtkZLibDataCompressor"
         case lz4 = "vtkLZ4DataCompressor"
         case lzma = "vtkLZMADataCompressor"
@@ -40,7 +40,7 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         headerType: BinaryDataHeaderType,
         byteOrder: ByteOrder,
         arrayName: String
-    ) throws -> Data {
+    ) throws(VTKWriter.Error) -> Data {
         guard blockSize > 0 else {
             throw VTKWriter.Error.invalidCompressionConfiguration(
                 reason: "blockSize must be greater than zero."
@@ -48,7 +48,11 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         }
 
         let chunks = payload.chunked(maximumBlockSize: blockSize)
-        let compressedChunks = try chunks.map { try compress(chunk: $0, arrayName: arrayName) }
+        var compressedChunks: [Data] = []
+        compressedChunks.reserveCapacity(chunks.count)
+        for chunk in chunks {
+            try compressedChunks.append(compress(chunk: chunk, arrayName: arrayName))
+        }
         let lastBlockSize = chunks.last?.count ?? 0
 
         var data = Data()
@@ -67,7 +71,7 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         return data
     }
 
-    private func compress(chunk: Data, arrayName: String) throws -> Data {
+    private func compress(chunk: Data, arrayName: String) throws(VTKWriter.Error) -> Data {
         guard chunk.isEmpty == false else {
             return Data()
         }
@@ -76,7 +80,10 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
         defer { destinationBuffer.deallocate() }
 
-        return try chunk.withUnsafeBytes { sourceBuffer in
+        var output = Data()
+        var compressionError: VTKWriter.Error?
+
+        chunk.withUnsafeBytes { sourceBuffer in
             let sourceBytes = sourceBuffer.bindMemory(to: UInt8.self)
             var stream = compression_stream(
                 dst_ptr: destinationBuffer,
@@ -91,11 +98,11 @@ public struct VTKCompression: Sendable, Equatable, Codable {
                 algorithm.compressionAlgorithm
             )
             guard status != COMPRESSION_STATUS_ERROR else {
-                throw VTKWriter.Error.compressionFailed(arrayName: arrayName, algorithm: algorithm.rawValue)
+                compressionError = .compressionFailed(arrayName: arrayName, algorithm: algorithm.rawValue)
+                return
             }
             defer { compression_stream_destroy(&stream) }
 
-            var output = Data()
             repeat {
                 stream.dst_ptr = destinationBuffer
                 stream.dst_size = destinationBufferSize
@@ -105,15 +112,20 @@ public struct VTKCompression: Sendable, Equatable, Codable {
                     Int32(COMPRESSION_STREAM_FINALIZE.rawValue)
                 )
                 guard status != COMPRESSION_STATUS_ERROR else {
-                    throw VTKWriter.Error.compressionFailed(arrayName: arrayName, algorithm: algorithm.rawValue)
+                    compressionError = .compressionFailed(arrayName: arrayName, algorithm: algorithm.rawValue)
+                    return
                 }
 
                 let producedByteCount = destinationBufferSize - stream.dst_size
                 output.append(destinationBuffer, count: producedByteCount)
             } while status == COMPRESSION_STATUS_OK
-
-            return output
         }
+
+        if let compressionError {
+            throw compressionError
+        }
+
+        return output
     }
 }
 

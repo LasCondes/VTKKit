@@ -1,7 +1,7 @@
 import Foundation
 
 public extension PVDFile {
-    static func load(from url: URL) throws -> PVDFile {
+    static func load(from url: URL) throws(VTKWriter.Error) -> PVDFile {
         let data: Data
         do {
             data = try Data(contentsOf: url)
@@ -44,7 +44,7 @@ public actor PVDSeriesWriter {
         url: URL,
         loadExisting: Bool = true,
         initialFile: PVDFile = .init(collection: .init(dataSet: []))
-    ) throws {
+    ) throws(VTKWriter.Error) {
         self.url = url
 
         if loadExisting, FileManager.default.fileExists(atPath: url.path) {
@@ -56,7 +56,7 @@ public actor PVDSeriesWriter {
         }
     }
 
-    public func append(_ dataSet: PVDDataSet) throws {
+    public func append(_ dataSet: PVDDataSet) throws(VTKWriter.Error) {
         try append(contentsOf: [dataSet])
     }
 
@@ -65,16 +65,16 @@ public actor PVDSeriesWriter {
         timestep: Double,
         group: String = "default",
         part: Int = 1
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try append(PVDDataSet(group: group, file: file, timestep: timestep, part: part))
     }
 
-    public func append(contentsOf dataSets: [PVDDataSet]) throws {
+    public func append(contentsOf dataSets: [PVDDataSet]) throws(VTKWriter.Error) {
         file = file.appending(contentsOf: dataSets)
         try appendInPlace(dataSets)
     }
 
-    public func replace(with file: PVDFile) throws {
+    public func replace(with file: PVDFile) throws(VTKWriter.Error) {
         self.file = file
         try writeCanonicalDocument(file)
         canAppendInPlace = true
@@ -84,7 +84,7 @@ public actor PVDSeriesWriter {
         file
     }
 
-    private func appendInPlace(_ dataSets: [PVDDataSet]) throws {
+    private func appendInPlace(_ dataSets: [PVDDataSet]) throws(VTKWriter.Error) {
         guard dataSets.isEmpty == false else {
             return
         }
@@ -128,7 +128,7 @@ public actor PVDSeriesWriter {
         }
     }
 
-    private func writeCanonicalDocument(_ file: PVDFile) throws {
+    private func writeCanonicalDocument(_ file: PVDFile) throws(VTKWriter.Error) {
         let directoryURL = url.deletingLastPathComponent()
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)

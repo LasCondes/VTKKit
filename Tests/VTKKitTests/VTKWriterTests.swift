@@ -1,9 +1,11 @@
 import Foundation
-import XCTest
+import Testing
 @testable import VTKKit
 
-final class VTKWriterTests: XCTestCase {
-    func testEncodesPolyDataDocument() throws {
+@Suite("VTKWriter")
+struct VTKWriterTests {
+    @Test
+    func encodesPolyDataDocument() throws {
         let vtk = VTKFile(
             polyData: PolyData(
                 piece: Piece(
@@ -47,17 +49,18 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"LittleEndian\">"))
-        XCTAssertTrue(xml.contains("<PolyData>\n    <FieldData>"))
-        XCTAssertTrue(xml.contains("<DataArray type=\"Float64\" Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">1.5</DataArray>"))
-        XCTAssertTrue(xml.contains("<PointData Scalars=\"Radius\">"))
-        XCTAssertTrue(xml.contains("<DataArray type=\"Float32\" Name=\"Radius\" format=\"ascii\" NumberOfComponents=\"1\">0.5</DataArray>"))
-        XCTAssertTrue(xml.contains("<Verts>"))
+        #expect(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"LittleEndian\">"))
+        #expect(xml.contains("<PolyData>\n    <FieldData>"))
+        #expect(xml.contains("<DataArray type=\"Float64\" Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">1.5</DataArray>"))
+        #expect(xml.contains("<PointData Scalars=\"Radius\">"))
+        #expect(xml.contains("<DataArray type=\"Float32\" Name=\"Radius\" format=\"ascii\" NumberOfComponents=\"1\">0.5</DataArray>"))
+        #expect(xml.contains("<Verts>"))
     }
 
-    func testWritesPVDDocumentAndCreatesParentDirectory() throws {
+    @Test
+    func writesPVDDocumentAndCreatesParentDirectory() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let outputURL = temporaryDirectory
@@ -77,14 +80,15 @@ final class VTKWriterTests: XCTestCase {
         try VTKWriter.write(pvd, to: outputURL)
 
         let data = try Data(contentsOf: outputURL)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
-        XCTAssertTrue(xml.contains("<Collection>"))
-        XCTAssertTrue(xml.contains("<DataSet timestep=\"1.0\" group=\"dynamic\" part=\"1\" file=\"frame_1.vtp\" />"))
+        #expect(FileManager.default.fileExists(atPath: outputURL.path))
+        #expect(xml.contains("<Collection>"))
+        #expect(xml.contains("<DataSet timestep=\"1.0\" group=\"dynamic\" part=\"1\" file=\"frame_1.vtp\" />"))
     }
 
-    func testEncodesInlineBinaryDataArray() throws {
+    @Test
+    func encodesInlineBinaryDataArray() throws {
         let vtk = VTKFile(
             polyData: PolyData(
                 piece: Piece(
@@ -105,13 +109,14 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"BigEndian\" header_type=\"UInt64\">"))
-        XCTAssertTrue(xml.contains("<DataArray type=\"Float32\" Name=\"Points\" format=\"binary\" NumberOfComponents=\"3\">AAAAAAAAAAw/gAAAQAAAAEBAAAA=</DataArray>"))
+        #expect(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"BigEndian\" header_type=\"UInt64\">"))
+        #expect(xml.contains("<DataArray type=\"Float32\" Name=\"Points\" format=\"binary\" NumberOfComponents=\"3\">AAAAAAAAAAw/gAAAQAAAAEBAAAA=</DataArray>"))
     }
 
-    func testEncodesAppendedDataArraysAndOffsets() throws {
+    @Test
+    func encodesAppendedDataArraysAndOffsets() throws {
         let vtk = VTKFile(
             polyData: PolyData(
                 piece: Piece(
@@ -142,15 +147,16 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"LittleEndian\" header_type=\"UInt32\">"))
-        XCTAssertTrue(xml.contains("<DataArray type=\"Float32\" Name=\"Points\" format=\"appended\" NumberOfComponents=\"3\" offset=\"0\" />"))
-        XCTAssertTrue(xml.contains("<DataArray type=\"Float32\" Name=\"Radius\" format=\"appended\" NumberOfComponents=\"1\" offset=\"24\" />"))
-        XCTAssertTrue(xml.contains("<AppendedData encoding=\"base64\">_DAAAAAAAAAAAAIA/AAAAQA==BAAAAAAAAD8=</AppendedData>"))
+        #expect(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"LittleEndian\" header_type=\"UInt32\">"))
+        #expect(xml.contains("<DataArray type=\"Float32\" Name=\"Points\" format=\"appended\" NumberOfComponents=\"3\" offset=\"0\" />"))
+        #expect(xml.contains("<DataArray type=\"Float32\" Name=\"Radius\" format=\"appended\" NumberOfComponents=\"1\" offset=\"24\" />"))
+        #expect(xml.contains("<AppendedData encoding=\"base64\">_DAAAAAAAAAAAAIA/AAAAQA==BAAAAAAAAD8=</AppendedData>"))
     }
 
-    func testRejectsUnsupportedBinaryType() throws {
+    @Test
+    func rejectsUnsupportedBinaryType() throws {
         let vtk = VTKFile(
             polyData: PolyData(
                 piece: Piece(
@@ -174,17 +180,21 @@ final class VTKWriterTests: XCTestCase {
             )
         )
 
-        XCTAssertThrowsError(try VTKWriter.encode(vtk)) { error in
-            guard case let VTKWriter.Error.unsupportedDataArrayType(arrayName, type) = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-
-            XCTAssertEqual(arrayName, "Label")
-            XCTAssertEqual(type, "String")
+        let error = try requireWriterError {
+            _ = try VTKWriter.encode(vtk)
         }
+
+        guard case let .unsupportedDataArrayType(arrayName, type) = error else {
+            Issue.record("Unexpected error: \(error)")
+            return
+        }
+
+        #expect(arrayName == "Label")
+        #expect(type == "String")
     }
 
-    func testEncodesCompressedBinaryDataArray() throws {
+    @Test
+    func encodesCompressedBinaryDataArray() throws {
         let vtk = VTKFile(
             polyData: try PolyData.pointCloud(
                 points: [1.0 as Float, 2.0, 3.0],
@@ -194,9 +204,9 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
-        let encodedArray = try XCTUnwrap(extractDataArrayText(named: "Points", from: xml))
-        let encodedData = try XCTUnwrap(Data(base64Encoded: encodedArray))
+        let xml = try #require(String(data: data, encoding: .utf8))
+        let encodedArray = try #require(try extractDataArrayText(named: "Points", from: xml))
+        let encodedData = try #require(Data(base64Encoded: encodedArray))
         var byteOffset = 0
         let blockCount = try readHeaderValue(
             from: encodedData,
@@ -223,15 +233,16 @@ final class VTKWriterTests: XCTestCase {
             byteOrder: .littleEndian
         )
 
-        XCTAssertTrue(xml.contains("compressor=\"vtkZLibDataCompressor\""))
-        XCTAssertEqual(blockCount, 1)
-        XCTAssertEqual(blockSize, 32 * 1024)
-        XCTAssertEqual(lastBlockSize, 12)
-        XCTAssertGreaterThan(compressedBlockSize, 0)
-        XCTAssertGreaterThan(encodedData.count, byteOffset)
+        #expect(xml.contains("compressor=\"vtkZLibDataCompressor\""))
+        #expect(blockCount == 1)
+        #expect(blockSize == 32 * 1024)
+        #expect(lastBlockSize == 12)
+        #expect(compressedBlockSize > 0)
+        #expect(encodedData.count > byteOffset)
     }
 
-    func testRejectsInvalidCompressionConfiguration() throws {
+    @Test
+    func rejectsInvalidCompressionConfiguration() throws {
         let vtk = VTKFile(
             polyData: try PolyData.pointCloud(
                 points: [1.0 as Float, 2.0, 3.0],
@@ -240,16 +251,20 @@ final class VTKWriterTests: XCTestCase {
             compression: VTKCompression(algorithm: .zlib, blockSize: 0)
         )
 
-        XCTAssertThrowsError(try VTKWriter.encode(vtk)) { error in
-            guard case let VTKWriter.Error.invalidCompressionConfiguration(reason) = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-
-            XCTAssertTrue(reason.contains("blockSize"))
+        let error = try requireWriterError {
+            _ = try VTKWriter.encode(vtk)
         }
+
+        guard case let .invalidCompressionConfiguration(reason) = error else {
+            Issue.record("Unexpected error: \(error)")
+            return
+        }
+
+        #expect(reason.contains("blockSize"))
     }
 
-    func testEncodesASCIIFromRawBinaryStorage() throws {
+    @Test
+    func encodesASCIIFromRawBinaryStorage() throws {
         let rawData = [1.0 as Float, 2.0, 3.0].withUnsafeBufferPointer { Data(buffer: $0) }
         let vtk = VTKFile(
             polyData: PolyData(
@@ -270,21 +285,23 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains(">1.0 2.0 3.0</DataArray>"))
+        #expect(xml.contains(">1.0 2.0 3.0</DataArray>"))
     }
 
-    func testUsesContiguousArrayBinaryStorage() throws {
+    @Test
+    func usesContiguousArrayBinaryStorage() throws {
         let points = ContiguousArray<Float>([0.0, 1.0, 2.0])
         let array = try DataArray.points(contiguousValues: points, format: .appended)
 
-        XCTAssertEqual(array.binaryStorage?.valueCount, 3)
-        XCTAssertEqual(array.binaryStorage?.byteOrder, .native)
-        XCTAssertEqual(array.rawValueCount, 3)
+        #expect(array.binaryStorage?.valueCount == 3)
+        #expect(array.binaryStorage?.byteOrder == .native)
+        #expect(array.rawValueCount == 3)
     }
 
-    func testStreamingWriteMatchesEncodedPolyDataDocument() throws {
+    @Test
+    func streamingWriteMatchesEncodedPolyDataDocument() throws {
         let file = try VTKFile.pointCloud(
             points: [0.0 as Float, 1.0, 2.0, 3.0, 4.0, 5.0],
             pointData: PointData(
@@ -307,10 +324,11 @@ final class VTKWriterTests: XCTestCase {
         try VTKWriter.write(file, to: outputURL)
         let written = try Data(contentsOf: outputURL)
 
-        XCTAssertEqual(written, encoded)
+        #expect(written == encoded)
     }
 
-    func testStreamingWriteMatchesEncodedUnstructuredGridDocument() throws {
+    @Test
+    func streamingWriteMatchesEncodedUnstructuredGridDocument() throws {
         let file = try VTUFile.polyhedronMesh(
             points: [
                 0.0 as Float, 0.0, 0.0,
@@ -336,22 +354,24 @@ final class VTKWriterTests: XCTestCase {
         try VTKWriter.write(file, to: outputURL)
         let written = try Data(contentsOf: outputURL)
 
-        XCTAssertEqual(written, encoded)
+        #expect(written == encoded)
     }
 
-    func testTypedDataArrayInfersVTKScalarType() throws {
+    @Test
+    func typedDataArrayInfersVTKScalarType() throws {
         let array = try DataArray(
             name: "TimeValue",
             numberOfComponents: 1,
             values: [0.25 as Double]
         )
 
-        XCTAssertEqual(array.type, VTKScalarType.float64.rawValue)
-        XCTAssertEqual(array.name, "TimeValue")
-        XCTAssertEqual(array.values, "0.25")
+        #expect(array.type == VTKScalarType.float64.rawValue)
+        #expect(array.name == "TimeValue")
+        #expect(array.values == "0.25")
     }
 
-    func testPointCloudBuilderCreatesVertexConnectivity() throws {
+    @Test
+    func pointCloudBuilderCreatesVertexConnectivity() throws {
         let polyData = try PolyData.pointCloud(
             points: [0.0 as Float, 1.0, 2.0, 3.0, 4.0, 5.0],
             pointData: PointData(
@@ -366,15 +386,16 @@ final class VTKWriterTests: XCTestCase {
 
         let vtk = VTKFile(polyData: polyData)
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("NumberOfVerts=\"2\""))
-        XCTAssertTrue(xml.contains("<FieldData>"))
-        XCTAssertTrue(xml.contains("Name=\"connectivity\" format=\"binary\""))
-        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"binary\""))
+        #expect(xml.contains("NumberOfVerts=\"2\""))
+        #expect(xml.contains("<FieldData>"))
+        #expect(xml.contains("Name=\"connectivity\" format=\"binary\""))
+        #expect(xml.contains("Name=\"offsets\" format=\"binary\""))
     }
 
-    func testTriangleMeshBuilderCreatesPolys() throws {
+    @Test
+    func triangleMeshBuilderCreatesPolys() throws {
         let polyData = try PolyData.triangleMesh(
             points: [0.0 as Float, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             triangleIndices: [0 as Int32, 1, 2],
@@ -384,15 +405,16 @@ final class VTKWriterTests: XCTestCase {
 
         let vtk = VTKFile(polyData: polyData)
         let data = try VTKWriter.encode(vtk)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("NumberOfPolys=\"1\""))
-        XCTAssertTrue(xml.contains("<Polys>"))
-        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3</DataArray>"))
-        XCTAssertTrue(xml.contains("Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">2.0</DataArray>"))
+        #expect(xml.contains("NumberOfPolys=\"1\""))
+        #expect(xml.contains("<Polys>"))
+        #expect(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3</DataArray>"))
+        #expect(xml.contains("Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">2.0</DataArray>"))
     }
 
-    func testPolygonMeshBuilderCreatesPolygonOffsets() throws {
+    @Test
+    func polygonMeshBuilderCreatesPolygonOffsets() throws {
         let polyData = try PolyData.polygonMesh(
             points: [
                 0.0 as Float, 0.0, 0.0,
@@ -404,14 +426,15 @@ final class VTKWriterTests: XCTestCase {
             format: .ascii
         )
         let data = try VTKWriter.encode(VTKFile(polyData: polyData))
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("NumberOfPolys=\"1\""))
-        XCTAssertTrue(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 3</DataArray>"))
-        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">4</DataArray>"))
+        #expect(xml.contains("NumberOfPolys=\"1\""))
+        #expect(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 3</DataArray>"))
+        #expect(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">4</DataArray>"))
     }
 
-    func testTriangulatedPolygonMeshBuilderFansPolygonIntoTriangles() throws {
+    @Test
+    func triangulatedPolygonMeshBuilderFansPolygonIntoTriangles() throws {
         let polyData = try PolyData.triangulatedPolygonMesh(
             points: [
                 0.0 as Float, 0.0, 0.0,
@@ -423,14 +446,15 @@ final class VTKWriterTests: XCTestCase {
             format: .ascii
         )
         let data = try VTKWriter.encode(VTKFile(polyData: polyData))
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("NumberOfPolys=\"2\""))
-        XCTAssertTrue(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 0 2 3</DataArray>"))
-        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6</DataArray>"))
+        #expect(xml.contains("NumberOfPolys=\"2\""))
+        #expect(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 0 2 3</DataArray>"))
+        #expect(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6</DataArray>"))
     }
 
-    func testRobustTriangulatedPolygonMeshHandlesConcavePolygon() throws {
+    @Test
+    func robustTriangulatedPolygonMeshHandlesConcavePolygon() throws {
         let polyData = try PolyData.robustTriangulatedPolygonMesh(
             points: [
                 0.0 as Float, 0.0, 0.0,
@@ -443,16 +467,17 @@ final class VTKWriterTests: XCTestCase {
             format: .ascii
         )
         let data = try VTKWriter.encode(VTKFile(polyData: polyData))
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("NumberOfPolys=\"3\""))
-        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6 9</DataArray>"))
-        XCTAssertFalse(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 0 2 3 0 3 4</DataArray>"))
+        #expect(xml.contains("NumberOfPolys=\"3\""))
+        #expect(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6 9</DataArray>"))
+        #expect(!xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 0 2 3 0 3 4</DataArray>"))
     }
 
-    func testRobustTriangulatedPolygonMeshRejectsSelfIntersectingPolygon() throws {
-        XCTAssertThrowsError(
-            try PolyData.robustTriangulatedPolygonMesh(
+    @Test
+    func robustTriangulatedPolygonMeshRejectsSelfIntersectingPolygon() throws {
+        let error = try requireWriterError {
+            _ = try PolyData.robustTriangulatedPolygonMesh(
                 points: [
                     0.0 as Float, 0.0, 0.0,
                     1.0, 1.0, 0.0,
@@ -462,17 +487,19 @@ final class VTKWriterTests: XCTestCase {
                 polygons: [[0 as Int32, 1, 2, 3]],
                 format: .ascii
             )
-        ) { error in
-            guard case let VTKWriter.Error.invalidCellLayout(datasetPath, reason) = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-
-            XCTAssertTrue(datasetPath.contains("triangulatedPolygonMesh"))
-            XCTAssertFalse(reason.isEmpty)
         }
+
+        guard case let .invalidCellLayout(datasetPath, reason) = error else {
+            Issue.record("Unexpected error: \(error)")
+            return
+        }
+
+        #expect(datasetPath.contains("triangulatedPolygonMesh"))
+        #expect(!reason.isEmpty)
     }
 
-    func testPVDSeriesBuilder() throws {
+    @Test
+    func pvdSeriesBuilder() throws {
         let pvd = try PVDFile.series(
             files: ["frame_0.vtp", "frame_1.vtp"],
             timesteps: [0.0, 1.0],
@@ -481,13 +508,14 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(pvd)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<DataSet timestep=\"0.0\" group=\"dynamic\" part=\"0\" file=\"frame_0.vtp\" />"))
-        XCTAssertTrue(xml.contains("<DataSet timestep=\"1.0\" group=\"dynamic\" part=\"0\" file=\"frame_1.vtp\" />"))
+        #expect(xml.contains("<DataSet timestep=\"0.0\" group=\"dynamic\" part=\"0\" file=\"frame_0.vtp\" />"))
+        #expect(xml.contains("<DataSet timestep=\"1.0\" group=\"dynamic\" part=\"0\" file=\"frame_1.vtp\" />"))
     }
 
-    func testPVDSeriesBuilderSortsMultipleGroupsByTimestep() throws {
+    @Test
+    func pvdSeriesBuilderSortsMultipleGroupsByTimestep() throws {
         let pvd = try PVDFile.series(
             groups: [
                 .init(
@@ -505,18 +533,19 @@ final class VTKWriterTests: XCTestCase {
             ]
         )
 
-        XCTAssertEqual(
-            pvd.collection.dataSet.map { "\($0.timestep):\($0.group):\($0.file)" },
-            [
-                "0.0:static:static.vtp",
-                "0.0:dynamic:frame_0.vtp",
-                "1.0:static:static.vtp",
-                "1.0:dynamic:frame_1.vtp",
-            ]
+        #expect(
+            pvd.collection.dataSet.map { "\($0.timestep):\($0.group):\($0.file)" }
+                == [
+                    "0.0:static:static.vtp",
+                    "0.0:dynamic:frame_0.vtp",
+                    "1.0:static:static.vtp",
+                    "1.0:dynamic:frame_1.vtp",
+                ]
         )
     }
 
-    func testPVDSeriesWriterAppendsAndLoadsExistingDocument() async throws {
+    @Test
+    func pvdSeriesWriterAppendsAndLoadsExistingDocument() async throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let outputURL = temporaryDirectory.appendingPathComponent("frames.pvd")
@@ -530,12 +559,13 @@ final class VTKWriterTests: XCTestCase {
 
         let file = try PVDFile.load(from: outputURL)
 
-        XCTAssertEqual(file.collection.dataSet.count, 3)
-        XCTAssertEqual(file.collection.dataSet.last?.file, "frame_2.vtp")
-        XCTAssertEqual(file.collection.dataSet.last?.timestep, 2.0)
+        #expect(file.collection.dataSet.count == 3)
+        #expect(file.collection.dataSet.last?.file == "frame_2.vtp")
+        #expect(file.collection.dataSet.last?.timestep == 2.0)
     }
 
-    func testEncodesUnstructuredGridDocument() throws {
+    @Test
+    func encodesUnstructuredGridDocument() throws {
         let file = VTUFile(
             unstructuredGrid: UnstructuredGrid(
                 piece: UnstructuredPiece(
@@ -561,15 +591,16 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(file)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">"))
-        XCTAssertTrue(xml.contains("NumberOfCells=\"1\""))
-        XCTAssertTrue(xml.contains("<CellData Scalars=\"CellValue\">"))
-        XCTAssertTrue(xml.contains("Name=\"types\" format=\"ascii\" NumberOfComponents=\"1\">5</DataArray>"))
+        #expect(xml.contains("<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">"))
+        #expect(xml.contains("NumberOfCells=\"1\""))
+        #expect(xml.contains("<CellData Scalars=\"CellValue\">"))
+        #expect(xml.contains("Name=\"types\" format=\"ascii\" NumberOfComponents=\"1\">5</DataArray>"))
     }
 
-    func testPolyhedronMeshBuilderEmitsFacesAndFaceOffsets() throws {
+    @Test
+    func polyhedronMeshBuilderEmitsFacesAndFaceOffsets() throws {
         let file = try VTUFile.polyhedronMesh(
             points: [
                 0.0 as Float, 0.0, 0.0,
@@ -588,14 +619,15 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(file)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("Name=\"types\" format=\"ascii\" NumberOfComponents=\"1\">42</DataArray>"))
-        XCTAssertTrue(xml.contains("Name=\"faces\" format=\"ascii\""))
-        XCTAssertTrue(xml.contains("Name=\"faceoffsets\" format=\"ascii\" NumberOfComponents=\"1\">17</DataArray>"))
+        #expect(xml.contains("Name=\"types\" format=\"ascii\" NumberOfComponents=\"1\">42</DataArray>"))
+        #expect(xml.contains("Name=\"faces\" format=\"ascii\""))
+        #expect(xml.contains("Name=\"faceoffsets\" format=\"ascii\" NumberOfComponents=\"1\">17</DataArray>"))
     }
 
-    func testFileBuilderAppliesBinaryOptions() throws {
+    @Test
+    func fileBuilderAppliesBinaryOptions() throws {
         let file = try VTKFile.pointCloud(
             points: [0.0 as Float, 1.0, 2.0],
             options: .init(
@@ -607,15 +639,16 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(file)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("byte_order=\"BigEndian\""))
-        XCTAssertTrue(xml.contains("header_type=\"UInt64\""))
-        XCTAssertTrue(xml.contains("compressor=\"vtkZLibDataCompressor\""))
-        XCTAssertTrue(xml.contains("format=\"appended\""))
+        #expect(xml.contains("byte_order=\"BigEndian\""))
+        #expect(xml.contains("header_type=\"UInt64\""))
+        #expect(xml.contains("compressor=\"vtkZLibDataCompressor\""))
+        #expect(xml.contains("format=\"appended\""))
     }
 
-    func testEncodesParallelPolyDataDocument() throws {
+    @Test
+    func encodesParallelPolyDataDocument() throws {
         let template = try PolyData.pointCloud(
             points: [0.0 as Float, 1.0, 2.0],
             pointData: PointData(
@@ -630,16 +663,17 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(file)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<VTKFile type=\"PPolyData\" version=\"0.1\" byte_order=\"LittleEndian\">"))
-        XCTAssertTrue(xml.contains("<PPointData Scalars=\"Radius\">"))
-        XCTAssertTrue(xml.contains("<PPoints>"))
-        XCTAssertTrue(xml.contains("<Piece Source=\"frame_0_piece_0.vtp\" />"))
-        XCTAssertTrue(xml.contains("<Piece Source=\"frame_0_piece_1.vtp\" />"))
+        #expect(xml.contains("<VTKFile type=\"PPolyData\" version=\"0.1\" byte_order=\"LittleEndian\">"))
+        #expect(xml.contains("<PPointData Scalars=\"Radius\">"))
+        #expect(xml.contains("<PPoints>"))
+        #expect(xml.contains("<Piece Source=\"frame_0_piece_0.vtp\" />"))
+        #expect(xml.contains("<Piece Source=\"frame_0_piece_1.vtp\" />"))
     }
 
-    func testPartitionedPolyDataWriterCreatesPiecesAndManifest() throws {
+    @Test
+    func partitionedPolyDataWriterCreatesPiecesAndManifest() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let manifestURL = temporaryDirectory.appendingPathComponent("frame_0.pvtp")
@@ -654,21 +688,22 @@ final class VTKWriterTests: XCTestCase {
             options: .init(compression: .zlib, dataArrayFormat: .appended)
         )
 
-        XCTAssertEqual(manifest.polyData.pieces.count, 2)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: manifestURL.path))
-        XCTAssertTrue(
+        #expect(manifest.polyData.pieces.count == 2)
+        #expect(FileManager.default.fileExists(atPath: manifestURL.path))
+        #expect(
             FileManager.default.fileExists(
                 atPath: temporaryDirectory.appendingPathComponent("frame_0_piece_0.vtp").path
             )
         )
-        XCTAssertTrue(
+        #expect(
             FileManager.default.fileExists(
                 atPath: temporaryDirectory.appendingPathComponent("frame_0_piece_1.vtp").path
             )
         )
     }
 
-    func testEncodesParallelUnstructuredGridDocument() throws {
+    @Test
+    func encodesParallelUnstructuredGridDocument() throws {
         let template = UnstructuredGrid(
             piece: UnstructuredPiece(
                 numberOfPoints: 3,
@@ -697,16 +732,17 @@ final class VTKWriterTests: XCTestCase {
         )
 
         let data = try VTKWriter.encode(file)
-        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let xml = try #require(String(data: data, encoding: .utf8))
 
-        XCTAssertTrue(xml.contains("<VTKFile type=\"PUnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">"))
-        XCTAssertTrue(xml.contains("<PPointData Vectors=\"Velocity\">"))
-        XCTAssertTrue(xml.contains("<PCellData Scalars=\"CellValue\">"))
-        XCTAssertTrue(xml.contains("<Piece Source=\"mesh_0.vtu\" />"))
-        XCTAssertTrue(xml.contains("<Piece Source=\"mesh_1.vtu\" />"))
+        #expect(xml.contains("<VTKFile type=\"PUnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">"))
+        #expect(xml.contains("<PPointData Vectors=\"Velocity\">"))
+        #expect(xml.contains("<PCellData Scalars=\"CellValue\">"))
+        #expect(xml.contains("<Piece Source=\"mesh_0.vtu\" />"))
+        #expect(xml.contains("<Piece Source=\"mesh_1.vtu\" />"))
     }
 
-    func testValidationErrorIncludesDatasetPath() throws {
+    @Test
+    func validationErrorIncludesDatasetPath() throws {
         let vtk = VTKFile(
             polyData: PolyData(
                 piece: Piece(
@@ -729,21 +765,25 @@ final class VTKWriterTests: XCTestCase {
             )
         )
 
-        XCTAssertThrowsError(try VTKWriter.encode(vtk)) { error in
-            guard case let VTKWriter.Error.invalidComponentCount(arrayName, datasetPath, valueCount, numberOfComponents) = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-
-            XCTAssertEqual(arrayName, "Velocity")
-            XCTAssertEqual(datasetPath, "PolyData/Piece/PointData")
-            XCTAssertEqual(valueCount, 2)
-            XCTAssertEqual(numberOfComponents, 3)
+        let error = try requireWriterError {
+            _ = try VTKWriter.encode(vtk)
         }
+
+        guard case let .invalidComponentCount(arrayName, datasetPath, valueCount, numberOfComponents) = error else {
+            Issue.record("Unexpected error: \(error)")
+            return
+        }
+
+        #expect(arrayName == "Velocity")
+        #expect(datasetPath == "PolyData/Piece/PointData")
+        #expect(valueCount == 2)
+        #expect(numberOfComponents == 3)
     }
 
-    func testCompatibilityWithVTKPythonReadersWhenAvailable() throws {
+    @Test
+    func compatibilityWithVTKPythonReadersWhenAvailable() throws {
         guard hasPythonVTK() else {
-            throw XCTSkip("Python vtk runtime is not installed.")
+            return
         }
 
         let temporaryDirectory = FileManager.default.temporaryDirectory
@@ -817,9 +857,10 @@ final class VTKWriterTests: XCTestCase {
         )
     }
 
-    func testCompatibilityWithParaViewPVDReaderWhenAvailable() throws {
+    @Test
+    func compatibilityWithParaViewPVDReaderWhenAvailable() throws {
         guard let pvpythonPath = findExecutable(named: "pvpython") else {
-            throw XCTSkip("pvpython is not installed.")
+            return
         }
 
         let temporaryDirectory = FileManager.default.temporaryDirectory
@@ -852,7 +893,8 @@ final class VTKWriterTests: XCTestCase {
         )
     }
 
-    func testModelRoundTripsThroughJSON() throws {
+    @Test
+    func modelRoundTripsThroughJSON() throws {
         let vtk = VTKFile(
             polyData: PolyData(
                 piece: Piece(
@@ -880,8 +922,18 @@ final class VTKWriterTests: XCTestCase {
         let data = try JSONEncoder().encode(vtk)
         let decoded = try JSONDecoder().decode(VTKFile.self, from: data)
 
-        XCTAssertEqual(decoded, vtk)
+        #expect(decoded == vtk)
     }
+}
+
+private func requireWriterError(_ body: () throws -> Void) throws -> VTKWriter.Error {
+    do {
+        try body()
+    } catch let error as VTKWriter.Error {
+        return error
+    }
+
+    throw TestSupportError.message("Expected VTKWriter.Error.")
 }
 
 private func extractDataArrayText(named name: String, from xml: String) throws -> String? {

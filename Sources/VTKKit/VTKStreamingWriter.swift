@@ -1,7 +1,7 @@
 import Foundation
 
 extension VTKWriter {
-    static func writeStreaming(_ file: VTKFile, to url: URL) throws {
+    static func writeStreaming(_ file: VTKFile, to url: URL) throws(VTKWriter.Error) {
         try file.polyData.validate(at: "PolyData")
         var sink = try XMLFileHandleSink(url: url)
         defer { sink.close() }
@@ -42,7 +42,7 @@ extension VTKWriter {
         try sink.writeCloseTag("VTKFile", indentLevel: 0)
     }
 
-    static func writeStreaming(_ file: VTUFile, to url: URL) throws {
+    static func writeStreaming(_ file: VTUFile, to url: URL) throws(VTKWriter.Error) {
         try file.unstructuredGrid.validate(at: "UnstructuredGrid")
         var sink = try XMLFileHandleSink(url: url)
         defer { sink.close() }
@@ -88,7 +88,7 @@ private struct XMLFileHandleSink {
     let url: URL
     private let fileHandle: FileHandle
 
-    init(url: URL) throws {
+    init(url: URL) throws(VTKWriter.Error) {
         let directoryURL = url.deletingLastPathComponent()
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
@@ -114,14 +114,14 @@ private struct XMLFileHandleSink {
         try? fileHandle.close()
     }
 
-    func write(_ string: String) throws {
+    func write(_ string: String) throws(VTKWriter.Error) {
         guard let data = string.data(using: .utf8) else {
             throw VTKWriter.Error.failedToEncodeDocument
         }
         try write(data)
     }
 
-    func write(_ data: Data) throws {
+    func write(_ data: Data) throws(VTKWriter.Error) {
         do {
             try fileHandle.write(contentsOf: data)
         } catch {
@@ -133,11 +133,11 @@ private struct XMLFileHandleSink {
         _ name: String,
         attributes: [(String, String?)] = [],
         indentLevel: Int
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try write("\(indentation(indentLevel))<\(name)\(serializedAttributes(attributes))>\n")
     }
 
-    func writeCloseTag(_ name: String, indentLevel: Int) throws {
+    func writeCloseTag(_ name: String, indentLevel: Int) throws(VTKWriter.Error) {
         try write("\(indentation(indentLevel))</\(name)>\n")
     }
 
@@ -145,7 +145,7 @@ private struct XMLFileHandleSink {
         _ name: String,
         attributes: [(String, String?)] = [],
         indentLevel: Int
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try write("\(indentation(indentLevel))<\(name)\(serializedAttributes(attributes)) />\n")
     }
 
@@ -154,7 +154,7 @@ private struct XMLFileHandleSink {
         attributes: [(String, String?)] = [],
         text: String,
         indentLevel: Int
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try write(
             "\(indentation(indentLevel))<\(name)\(serializedAttributes(attributes))>\(text.xmlEscaped)</\(name)>\n"
         )
@@ -164,11 +164,11 @@ private struct XMLFileHandleSink {
         _ name: String,
         attributes: [(String, String?)] = [],
         indentLevel: Int
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try write("\(indentation(indentLevel))<\(name)\(serializedAttributes(attributes))>")
     }
 
-    func writeTagSuffix(_ name: String) throws {
+    func writeTagSuffix(_ name: String) throws(VTKWriter.Error) {
         try write("</\(name)>\n")
     }
 
@@ -196,7 +196,7 @@ private struct VTKStreamingBinaryLayout {
         byteOrder: ByteOrder,
         headerType: BinaryDataHeaderType,
         compression: VTKCompression?
-    ) throws {
+    ) throws(VTKWriter.Error) {
         self.appendedArrays = appendedArrays
 
         var offsets: [Int] = []
@@ -222,7 +222,7 @@ private struct VTKStreamingBinaryLayout {
         byteOrder: ByteOrder,
         headerType: BinaryDataHeaderType,
         compression: VTKCompression?
-    ) throws {
+    ) throws(VTKWriter.Error) {
         guard appendedArrays.isEmpty == false else {
             return
         }
@@ -274,7 +274,7 @@ private extension PolyData {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("PolyData", indentLevel: indentLevel)
         try fieldData?.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
         try piece.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
@@ -291,7 +291,7 @@ private extension UnstructuredGrid {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("UnstructuredGrid", indentLevel: indentLevel)
         try fieldData?.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
         try piece.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
@@ -308,7 +308,7 @@ private extension FieldData {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("FieldData", indentLevel: indentLevel)
         for element in dataArray {
             try element.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
@@ -329,7 +329,7 @@ private extension Piece {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag(
             "Piece",
             attributes: [
@@ -361,7 +361,7 @@ private extension UnstructuredPiece {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag(
             "Piece",
             attributes: [
@@ -387,7 +387,7 @@ private extension Points {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("Points", indentLevel: indentLevel)
         try dataArray.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
         try sink.writeCloseTag("Points", indentLevel: indentLevel)
@@ -403,7 +403,7 @@ private extension PointData {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag(
             "PointData",
             attributes: [
@@ -428,7 +428,7 @@ private extension CellData {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag(
             "CellData",
             attributes: [
@@ -453,7 +453,7 @@ private extension Polys {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("Polys", indentLevel: indentLevel)
         for element in dataArray {
             try element.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
@@ -471,7 +471,7 @@ private extension Verts {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("Verts", indentLevel: indentLevel)
         for element in dataArray {
             try element.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
@@ -489,7 +489,7 @@ private extension Cells {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("Cells", indentLevel: indentLevel)
         for element in dataArray {
             try element.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
@@ -503,7 +503,7 @@ private extension DataArray {
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
         context: inout VTKStreamingRenderContext
-    ) throws {
+    ) throws(VTKWriter.Error) {
         let attributes: [(String, String?)] = [
             ("type", type),
             ("Name", name),
