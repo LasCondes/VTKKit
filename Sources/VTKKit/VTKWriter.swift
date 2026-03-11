@@ -8,6 +8,11 @@ public enum VTKWriter {
         case unsupportedDataArrayType(arrayName: String, type: String)
         case invalidDataArrayValue(arrayName: String, type: String, value: String)
         case binaryPayloadTooLarge(arrayName: String, headerType: String, payloadByteCount: Int)
+        case invalidComponentCount(arrayName: String, datasetPath: String, valueCount: Int, numberOfComponents: Int)
+        case invalidTupleCount(arrayName: String, datasetPath: String, expectedTupleCount: Int, actualTupleCount: Int)
+        case invalidCellLayout(datasetPath: String, reason: String)
+        case invalidSeriesDefinition(reason: String)
+        case numericOverflow(datasetPath: String, value: Int, targetType: String)
 
         public var errorDescription: String? {
             switch self {
@@ -23,6 +28,16 @@ public enum VTKWriter {
                 return "DataArray '\(arrayName)' contains value '\(value)' that cannot be encoded as \(type)."
             case .binaryPayloadTooLarge(let arrayName, let headerType, let payloadByteCount):
                 return "DataArray '\(arrayName)' payload of \(payloadByteCount) bytes exceeds the \(headerType) header limit."
+            case .invalidComponentCount(let arrayName, let datasetPath, let valueCount, let numberOfComponents):
+                return "DataArray '\(arrayName)' at '\(datasetPath)' has \(valueCount) values, which is not divisible by NumberOfComponents=\(numberOfComponents)."
+            case .invalidTupleCount(let arrayName, let datasetPath, let expectedTupleCount, let actualTupleCount):
+                return "DataArray '\(arrayName)' at '\(datasetPath)' has \(actualTupleCount) tuples, expected \(expectedTupleCount)."
+            case .invalidCellLayout(let datasetPath, let reason):
+                return "Invalid cell layout at '\(datasetPath)'. \(reason)"
+            case .invalidSeriesDefinition(let reason):
+                return "Invalid PVD series definition. \(reason)"
+            case .numericOverflow(let datasetPath, let value, let targetType):
+                return "Value \(value) at '\(datasetPath)' cannot be represented as \(targetType)."
             }
         }
     }
@@ -31,11 +46,19 @@ public enum VTKWriter {
         try data(for: file)
     }
 
+    public static func encode(_ file: VTUFile) throws -> Data {
+        try data(for: file)
+    }
+
     public static func encode(_ file: PVDFile) throws -> Data {
         try data(for: file)
     }
 
     public static func write(_ file: VTKFile, to url: URL) throws {
+        try writeData(encode(file), to: url)
+    }
+
+    public static func write(_ file: VTUFile, to url: URL) throws {
         try writeData(encode(file), to: url)
     }
 

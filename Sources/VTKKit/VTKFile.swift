@@ -173,6 +173,7 @@ public struct DataArray: Sendable, Equatable, Codable {
 
 extension VTKFile: XMLDocumentRenderable {
     func renderXML(into xml: inout String) throws {
+        try polyData.validate(at: "PolyData")
         var context = VTKXMLBinaryEncodingContext(
             byteOrder: byteOrder,
             headerType: headerType
@@ -195,11 +196,11 @@ extension VTKFile: XMLDocumentRenderable {
 }
 
 extension PolyData {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         fieldData?.usesEncodedData == true || piece.usesEncodedData
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -212,14 +213,14 @@ extension PolyData {
 }
 
 extension Piece {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         points.usesEncodedData
             || pointData?.usesEncodedData == true
             || polys?.usesEncodedData == true
             || verts?.usesEncodedData == true
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -247,11 +248,11 @@ extension Piece {
 }
 
 extension FieldData {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         dataArray.contains(where: \.usesEncodedData)
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -265,11 +266,11 @@ extension FieldData {
 }
 
 extension Points {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         dataArray.usesEncodedData
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -281,11 +282,11 @@ extension Points {
 }
 
 extension PointData {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         dataArray.contains(where: \.usesEncodedData)
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -307,11 +308,11 @@ extension PointData {
 }
 
 extension Polys {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         dataArray.contains(where: \.usesEncodedData)
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -325,11 +326,11 @@ extension Polys {
 }
 
 extension Verts {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         dataArray.contains(where: \.usesEncodedData)
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -343,11 +344,11 @@ extension Verts {
 }
 
 extension DataArray {
-    fileprivate var usesEncodedData: Bool {
+    var usesEncodedData: Bool {
         format != .ascii
     }
 
-    fileprivate func renderXML(
+    func renderXML(
         into xml: inout String,
         indentLevel: Int,
         context: inout VTKXMLBinaryEncodingContext
@@ -392,7 +393,7 @@ extension DataArray {
     }
 }
 
-fileprivate struct VTKXMLBinaryEncodingContext {
+struct VTKXMLBinaryEncodingContext {
     var byteOrder: ByteOrder
     var headerType: BinaryDataHeaderType
     private var appendedSegments: [String] = []
@@ -424,7 +425,7 @@ fileprivate struct VTKXMLBinaryEncodingContext {
     }
 }
 
-private enum VTKScalarType: String {
+public enum VTKScalarType: String, Sendable, Codable, CaseIterable {
     case int8 = "Int8"
     case uint8 = "UInt8"
     case int16 = "Int16"
