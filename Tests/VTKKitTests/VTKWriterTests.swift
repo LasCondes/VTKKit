@@ -11,7 +11,7 @@ final class VTKWriterTests: XCTestCase {
                     numberOfVerts: 1,
                     points: Points(
                         dataArray: DataArray(
-                            type: "Float32",
+                            uncheckedType: "Float32",
                             name: "Points",
                             numberOfComponents: 3,
                             values: [0.0, 1.0, 2.0]
@@ -21,7 +21,7 @@ final class VTKWriterTests: XCTestCase {
                         scalarsName: "Radius",
                         dataArray: [
                             DataArray(
-                                type: "Float32",
+                                uncheckedType: "Float32",
                                 name: "Radius",
                                 numberOfComponents: 1,
                                 values: [0.5]
@@ -30,14 +30,14 @@ final class VTKWriterTests: XCTestCase {
                     ),
                     verts: Verts(
                         dataArray: [
-                            DataArray(type: "Int32", name: "connectivity", numberOfComponents: 1, values: [0]),
-                            DataArray(type: "Int32", name: "offsets", numberOfComponents: 1, values: [1]),
+                            DataArray(uncheckedType: "Int32", name: "connectivity", numberOfComponents: 1, values: [0]),
+                            DataArray(uncheckedType: "Int32", name: "offsets", numberOfComponents: 1, values: [1]),
                         ]
                     )
                 ),
                 fieldData: FieldData(
                     timeValue: DataArray(
-                        type: "Float64",
+                        uncheckedType: "Float64",
                         name: "TimeValue",
                         numberOfComponents: 1,
                         values: [1.5]
@@ -91,7 +91,7 @@ final class VTKWriterTests: XCTestCase {
                     numberOfPoints: 1,
                     points: Points(
                         dataArray: DataArray(
-                            type: "Float32",
+                            uncheckedType: "Float32",
                             name: "Points",
                             format: .binary,
                             numberOfComponents: 3,
@@ -118,7 +118,7 @@ final class VTKWriterTests: XCTestCase {
                     numberOfPoints: 1,
                     points: Points(
                         dataArray: DataArray(
-                            type: "Float32",
+                            uncheckedType: "Float32",
                             name: "Points",
                             format: .appended,
                             numberOfComponents: 3,
@@ -129,7 +129,7 @@ final class VTKWriterTests: XCTestCase {
                         scalarsName: "Radius",
                         dataArray: [
                             DataArray(
-                                type: "Float32",
+                                uncheckedType: "Float32",
                                 name: "Radius",
                                 format: .appended,
                                 numberOfComponents: 1,
@@ -162,7 +162,7 @@ final class VTKWriterTests: XCTestCase {
                         scalarsName: "Label",
                         dataArray: [
                             DataArray(
-                                type: "String",
+                                uncheckedType: "String",
                                 name: "Label",
                                 format: .binary,
                                 numberOfComponents: 1,
@@ -284,6 +284,61 @@ final class VTKWriterTests: XCTestCase {
         XCTAssertEqual(array.rawValueCount, 3)
     }
 
+    func testStreamingWriteMatchesEncodedPolyDataDocument() throws {
+        let file = try VTKFile.pointCloud(
+            points: [0.0 as Float, 1.0, 2.0, 3.0, 4.0, 5.0],
+            pointData: PointData(
+                scalarsName: "Radius",
+                dataArray: [.scalars(name: "Radius", values: [0.5 as Float, 0.75 as Float], format: .appended)]
+            ),
+            fieldData: .timeValue(1.0 as Double, format: .appended),
+            options: .init(
+                byteOrder: .littleEndian,
+                headerType: .uInt64,
+                compression: .zlib,
+                dataArrayFormat: .appended
+            )
+        )
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("vtp")
+
+        let encoded = try VTKWriter.encode(file)
+        try VTKWriter.write(file, to: outputURL)
+        let written = try Data(contentsOf: outputURL)
+
+        XCTAssertEqual(written, encoded)
+    }
+
+    func testStreamingWriteMatchesEncodedUnstructuredGridDocument() throws {
+        let file = try VTUFile.polyhedronMesh(
+            points: [
+                0.0 as Float, 0.0, 0.0,
+                1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.0, 0.0, 1.0,
+            ],
+            cells: [
+                [
+                    [0, 1, 2],
+                    [0, 1, 3],
+                    [1, 2, 3],
+                    [0, 2, 3],
+                ],
+            ],
+            options: .init(compression: .zlib, dataArrayFormat: .appended)
+        )
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("vtu")
+
+        let encoded = try VTKWriter.encode(file)
+        try VTKWriter.write(file, to: outputURL)
+        let written = try Data(contentsOf: outputURL)
+
+        XCTAssertEqual(written, encoded)
+    }
+
     func testTypedDataArrayInfersVTKScalarType() throws {
         let array = try DataArray(
             name: "TimeValue",
@@ -335,6 +390,44 @@ final class VTKWriterTests: XCTestCase {
         XCTAssertTrue(xml.contains("<Polys>"))
         XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3</DataArray>"))
         XCTAssertTrue(xml.contains("Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">2.0</DataArray>"))
+    }
+
+    func testPolygonMeshBuilderCreatesPolygonOffsets() throws {
+        let polyData = try PolyData.polygonMesh(
+            points: [
+                0.0 as Float, 0.0, 0.0,
+                1.0, 0.0, 0.0,
+                1.0, 1.0, 0.0,
+                0.0, 1.0, 0.0,
+            ],
+            polygons: [[0 as Int32, 1, 2, 3]],
+            format: .ascii
+        )
+        let data = try VTKWriter.encode(VTKFile(polyData: polyData))
+        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("NumberOfPolys=\"1\""))
+        XCTAssertTrue(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 3</DataArray>"))
+        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">4</DataArray>"))
+    }
+
+    func testTriangulatedPolygonMeshBuilderFansPolygonIntoTriangles() throws {
+        let polyData = try PolyData.triangulatedPolygonMesh(
+            points: [
+                0.0 as Float, 0.0, 0.0,
+                1.0, 0.0, 0.0,
+                1.0, 1.0, 0.0,
+                0.0, 1.0, 0.0,
+            ],
+            polygons: [[0 as Int32, 1, 2, 3]],
+            format: .ascii
+        )
+        let data = try VTKWriter.encode(VTKFile(polyData: polyData))
+        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("NumberOfPolys=\"2\""))
+        XCTAssertTrue(xml.contains("Name=\"connectivity\" format=\"ascii\" NumberOfComponents=\"1\">0 1 2 0 2 3</DataArray>"))
+        XCTAssertTrue(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3 6</DataArray>"))
     }
 
     func testPVDSeriesBuilder() throws {
@@ -405,6 +498,52 @@ final class VTKWriterTests: XCTestCase {
         XCTAssertTrue(xml.contains("Name=\"types\" format=\"ascii\" NumberOfComponents=\"1\">5</DataArray>"))
     }
 
+    func testPolyhedronMeshBuilderEmitsFacesAndFaceOffsets() throws {
+        let file = try VTUFile.polyhedronMesh(
+            points: [
+                0.0 as Float, 0.0, 0.0,
+                1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.0, 0.0, 1.0,
+            ],
+            cells: [
+                [
+                    [0, 1, 2],
+                    [0, 1, 3],
+                    [1, 2, 3],
+                    [0, 2, 3],
+                ],
+            ]
+        )
+
+        let data = try VTKWriter.encode(file)
+        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("Name=\"types\" format=\"ascii\" NumberOfComponents=\"1\">42</DataArray>"))
+        XCTAssertTrue(xml.contains("Name=\"faces\" format=\"ascii\""))
+        XCTAssertTrue(xml.contains("Name=\"faceoffsets\" format=\"ascii\" NumberOfComponents=\"1\">17</DataArray>"))
+    }
+
+    func testFileBuilderAppliesBinaryOptions() throws {
+        let file = try VTKFile.pointCloud(
+            points: [0.0 as Float, 1.0, 2.0],
+            options: .init(
+                byteOrder: .bigEndian,
+                headerType: .uInt64,
+                compression: .zlib,
+                dataArrayFormat: .appended
+            )
+        )
+
+        let data = try VTKWriter.encode(file)
+        let xml = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("byte_order=\"BigEndian\""))
+        XCTAssertTrue(xml.contains("header_type=\"UInt64\""))
+        XCTAssertTrue(xml.contains("compressor=\"vtkZLibDataCompressor\""))
+        XCTAssertTrue(xml.contains("format=\"appended\""))
+    }
+
     func testEncodesParallelPolyDataDocument() throws {
         let template = try PolyData.pointCloud(
             points: [0.0 as Float, 1.0, 2.0],
@@ -427,6 +566,35 @@ final class VTKWriterTests: XCTestCase {
         XCTAssertTrue(xml.contains("<PPoints>"))
         XCTAssertTrue(xml.contains("<Piece Source=\"frame_0_piece_0.vtp\" />"))
         XCTAssertTrue(xml.contains("<Piece Source=\"frame_0_piece_1.vtp\" />"))
+    }
+
+    func testPartitionedPolyDataWriterCreatesPiecesAndManifest() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let manifestURL = temporaryDirectory.appendingPathComponent("frame_0.pvtp")
+        let pieces = [
+            try PolyData.pointCloud(points: [0.0 as Float, 1.0, 2.0], format: .appended),
+            try PolyData.pointCloud(points: [3.0 as Float, 4.0, 5.0], format: .appended),
+        ]
+
+        let manifest = try VTKWriter.writePartitionedPolyData(
+            pieces: pieces,
+            manifestURL: manifestURL,
+            options: .init(compression: .zlib, dataArrayFormat: .appended)
+        )
+
+        XCTAssertEqual(manifest.polyData.pieces.count, 2)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manifestURL.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: temporaryDirectory.appendingPathComponent("frame_0_piece_0.vtp").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: temporaryDirectory.appendingPathComponent("frame_0_piece_1.vtp").path
+            )
+        )
     }
 
     func testEncodesParallelUnstructuredGridDocument() throws {
@@ -479,7 +647,7 @@ final class VTKWriterTests: XCTestCase {
                         vectorsName: "Velocity",
                         dataArray: [
                             DataArray(
-                                type: "Float32",
+                                uncheckedType: "Float32",
                                 name: "Velocity",
                                 numberOfComponents: 3,
                                 values: [1.0 as Float, 2.0]
@@ -620,7 +788,7 @@ final class VTKWriterTests: XCTestCase {
                     numberOfPoints: 1,
                     points: Points(
                         dataArray: DataArray(
-                            type: "Float32",
+                            uncheckedType: "Float32",
                             name: "Points",
                             numberOfComponents: 3,
                             values: [0.0, 1.0, 2.0]
@@ -629,7 +797,7 @@ final class VTKWriterTests: XCTestCase {
                 ),
                 fieldData: FieldData(
                     timeValue: DataArray(
-                        type: "Float64",
+                        uncheckedType: "Float64",
                         name: "TimeValue",
                         numberOfComponents: 1,
                         values: [0.25]

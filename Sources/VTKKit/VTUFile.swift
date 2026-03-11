@@ -329,6 +329,7 @@ extension Cells {
         }
 
         let offsetValues = try offsets.integerValues(at: datasetPath)
+        let typeValues = try types.integerValues(at: datasetPath)
         var previousOffset = 0
         for offset in offsetValues {
             guard offset >= previousOffset else {
@@ -347,6 +348,141 @@ extension Cells {
             )
         }
 
-        _ = try types.integerValues(at: datasetPath)
+        let faces = dataArray.first(where: { $0.name == "faces" })
+        let faceOffsets = dataArray.first(where: { $0.name == "faceoffsets" })
+        let containsPolyhedron = typeValues.contains(Int(VTKCellType.polyhedron.rawValue))
+
+        if containsPolyhedron || faces != nil || faceOffsets != nil {
+            guard let faces else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "Polyhedron cells require a faces array."
+                )
+            }
+
+            guard let faceOffsets else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "Polyhedron cells require a faceoffsets array."
+                )
+            }
+
+            let faceOffsetTupleCount = try faceOffsets.validatedTupleCount(at: datasetPath)
+            guard faceOffsetTupleCount == expectedCellCount else {
+                throw VTKWriter.Error.invalidTupleCount(
+                    arrayName: faceOffsets.name,
+                    datasetPath: datasetPath,
+                    expectedTupleCount: expectedCellCount,
+                    actualTupleCount: faceOffsetTupleCount
+                )
+            }
+
+            let faceValues = try faces.integerValues(at: datasetPath)
+            let faceOffsetValues = try faceOffsets.integerValues(at: datasetPath)
+            var previousFaceOffset = 0
+            for faceOffset in faceOffsetValues {
+                guard faceOffset >= previousFaceOffset else {
+                    throw VTKWriter.Error.invalidCellLayout(
+                        datasetPath: datasetPath,
+                        reason: "faceoffsets must be monotonically increasing."
+                    )
+                }
+                previousFaceOffset = faceOffset
+            }
+
+            guard faceOffsetValues.last ?? 0 == faceValues.count else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "The final face offset \(faceOffsetValues.last ?? 0) must equal faces value count \(faceValues.count)."
+                )
+            }
+
+            try validatePolyhedronFaces(
+                faceValues: faceValues,
+                faceOffsets: faceOffsetValues,
+                connectivityOffsets: offsetValues,
+                connectivityValues: try connectivity.integerValues(at: datasetPath),
+                types: typeValues,
+                datasetPath: datasetPath
+            )
+        }
+    }
+}
+
+private func validatePolyhedronFaces(
+    faceValues: [Int],
+    faceOffsets: [Int],
+    connectivityOffsets: [Int],
+    connectivityValues: [Int],
+    types: [Int],
+    datasetPath: String
+) throws {
+    var faceCursor = 0
+    var connectivityCursor = 0
+
+    for (cellIndex, typeValue) in types.enumerated() {
+        let connectivityUpperBound = connectivityOffsets[cellIndex]
+        if cellIndex < faceOffsets.count, typeValue == Int(VTKCellType.polyhedron.rawValue) {
+            let cellFaceUpperBound = faceOffsets[cellIndex]
+            guard faceCursor < cellFaceUpperBound else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "Polyhedron cell \(cellIndex) is missing its face count."
+                )
+            }
+
+            let faceCount = faceValues[faceCursor]
+            faceCursor += 1
+            guard faceCount > 0 else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "Polyhedron cell \(cellIndex) must contain at least one face."
+                )
+            }
+
+            for _ in 0..<faceCount {
+                guard faceCursor < cellFaceUpperBound else {
+                    throw VTKWriter.Error.invalidCellLayout(
+                        datasetPath: datasetPath,
+                        reason: "Polyhedron cell \(cellIndex) ended before all faces were decoded."
+                    )
+                }
+
+                let pointCount = faceValues[faceCursor]
+                faceCursor += 1
+                guard pointCount >= 3 else {
+                    throw VTKWriter.Error.invalidCellLayout(
+                        datasetPath: datasetPath,
+                        reason: "Polyhedron faces must contain at least 3 points."
+                    )
+                }
+
+                guard faceCursor + pointCount <= cellFaceUpperBound else {
+                    throw VTKWriter.Error.invalidCellLayout(
+                        datasetPath: datasetPath,
+                        reason: "Polyhedron cell \(cellIndex) face connectivity is truncated."
+                    )
+                }
+
+                let faceConnectivity = faceValues[faceCursor..<(faceCursor + pointCount)]
+                let cellConnectivity = connectivityValues[connectivityCursor..<connectivityUpperBound]
+                for index in faceConnectivity where cellConnectivity.contains(index) == false {
+                    throw VTKWriter.Error.invalidCellLayout(
+                        datasetPath: datasetPath,
+                        reason: "Polyhedron face references point \(index) that is not present in cell connectivity."
+                    )
+                }
+                faceCursor += pointCount
+            }
+
+            guard faceCursor == cellFaceUpperBound else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "Polyhedron cell \(cellIndex) has trailing face data."
+                )
+            }
+        }
+
+        connectivityCursor = connectivityUpperBound
     }
 }

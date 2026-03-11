@@ -4,6 +4,7 @@ public enum VTKWriter {
     public enum Error: LocalizedError {
         case failedToEncodeDocument
         case failedToCreateDirectory(path: String, underlying: Swift.Error)
+        case failedToOpenFile(path: String, underlying: Swift.Error)
         case failedToWrite(path: String, underlying: Swift.Error)
         case unsupportedDataArrayType(arrayName: String, type: String)
         case invalidDataArrayValue(arrayName: String, type: String, value: String)
@@ -25,6 +26,8 @@ public enum VTKWriter {
                 return "Could not encode the VTK document as UTF-8 data."
             case .failedToCreateDirectory(let path, let underlying):
                 return "Could not create the output directory at '\(path)'. \(underlying.localizedDescription)"
+            case .failedToOpenFile(let path, let underlying):
+                return "Could not open VTK output at '\(path)'. \(underlying.localizedDescription)"
             case .failedToWrite(let path, let underlying):
                 return "Could not write VTK output to '\(path)'. \(underlying.localizedDescription)"
             case .unsupportedDataArrayType(let arrayName, let type):
@@ -78,11 +81,11 @@ public enum VTKWriter {
     }
 
     public static func write(_ file: VTKFile, to url: URL) throws {
-        try writeData(encode(file), to: url)
+        try writeStreaming(file, to: url)
     }
 
     public static func write(_ file: VTUFile, to url: URL) throws {
-        try writeData(encode(file), to: url)
+        try writeStreaming(file, to: url)
     }
 
     public static func write(_ file: PVTPFile, to url: URL) throws {
@@ -177,7 +180,7 @@ enum XMLTag {
 }
 
 extension String {
-    fileprivate var xmlEscaped: String {
+    var xmlEscaped: String {
         self
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "\"", with: "&quot;")

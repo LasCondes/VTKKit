@@ -17,13 +17,17 @@ VTKKit currently supports a focused subset of the VTK XML ecosystem:
 - ASCII, inline binary, and appended VTK PolyData XML (`.vtp`) documents
 - ASCII, inline binary, and appended UnstructuredGrid XML (`.vtu`) documents
 - ZLib, LZ4, and LZMA compression for inline binary and appended arrays
+- Streaming `.vtp` and `.vtu` file writes for binary/appended payloads
 - Dataset-level `FieldData` for metadata such as `TimeValue`
 - Strongly typed `DataArray` construction for VTK scalar types
+- Explicit `uncheckedType:` escape hatches when raw VTK type strings are unavoidable
 - Low-copy `DataArray` construction from `ContiguousArray`, `UnsafeBufferPointer`, and `Data`
-- High-level builders for point clouds, triangle meshes, and PVD time series
+- High-level builders for point clouds, triangle meshes, polygon meshes, polyhedron cells, and PVD time series
+- File-level builders driven by `VTKXMLFileOptions`
 - PVD collection (`.pvd`) meta-files that reference VTK XML datasets
 - Incremental `.pvd` mutation through `PVDSeriesWriter`
 - Parallel dataset wrapper files for `.pvtp` and `.pvtu`
+- Partition writers that emit piece files plus `.pvtp` / `.pvtu` manifests
 - File-writing helpers for `.vtp`, `.pvtp`, `.vtu`, `.pvtu`, and `.pvd` output
 
 The package is intentionally agnostic about application domain models. Callers
@@ -38,10 +42,14 @@ It does not aim to cover every VTK dataset type. Serial `PolyData` and
   `Codable` conformance.
 - Typed scalar protocols and `DataArray` convenience factories remove the most
   common type/payload mismatches at the call site.
+- The untyped path stays available, but it is now an explicit `uncheckedType:`
+  API instead of looking like the default constructor.
 - Binary and appended writers can work directly from raw scalar buffers instead
   of forcing every export through intermediate whitespace-separated strings.
-- XML writing is explicit and format-aware rather than routed through a generic
-  XML encoder.
+- `VTKWriter.write` streams serial `.vtp` / `.vtu` output directly to disk so
+  large appended payloads do not require one giant in-memory XML string.
+- XML encoding remains explicit and format-aware rather than routed through a
+  generic XML encoder.
 - Validation runs before serialization and reports array names plus dataset
   paths for component-count, tuple-count, and cell-layout problems.
 - Compatibility tests are written to exercise real VTK/ParaView readers when
@@ -64,13 +72,13 @@ let velocity = try DataArray.vectors(
 let time = FieldData.timeValue(0.25 as Double, format: .ascii)
 ```
 
-### Write a point-cloud `.vtp`
+### Write a point-cloud `.vtp` with file options
 
 ```swift
 import Foundation
 import VTKKit
 
-let polyData = try PolyData.pointCloud(
+let file = try VTKFile.pointCloud(
     points: [
         0.0 as Float, 1.0, 2.0,
         3.0, 4.0, 5.0,
@@ -82,12 +90,10 @@ let polyData = try PolyData.pointCloud(
         ]
     ),
     fieldData: .timeValue(1.0 as Double),
-    format: .binary
-)
-
-let file = VTKFile(
-    polyData: polyData,
-    compression: .zlib
+    options: .init(
+        compression: .zlib,
+        dataArrayFormat: .appended
+    )
 )
 
 try VTKWriter.write(file, to: URL(fileURLWithPath: "particles.vtp"))
@@ -113,6 +119,35 @@ let polyData = try PolyData.triangleMesh(
 try VTKWriter.write(VTKFile(polyData: polyData), to: URL(fileURLWithPath: "surface.vtp"))
 ```
 
+### Write a polygon mesh or triangulate polygon fans
+
+```swift
+import Foundation
+import VTKKit
+
+let polygonFile = try VTKFile.polygonMesh(
+    points: [
+        0.0 as Float, 0.0, 0.0,
+        1.0, 0.0, 0.0,
+        1.0, 1.0, 0.0,
+        0.0, 1.0, 0.0,
+    ],
+    polygons: [[0, 1, 2, 3]],
+    options: .init(dataArrayFormat: .ascii)
+)
+
+let triangulatedFile = try VTKFile.triangulatedPolygonMesh(
+    points: [
+        0.0 as Float, 0.0, 0.0,
+        1.0, 0.0, 0.0,
+        1.0, 1.0, 0.0,
+        0.0, 1.0, 0.0,
+    ],
+    polygons: [[0, 1, 2, 3]],
+    options: .init(dataArrayFormat: .ascii)
+)
+```
+
 ### Use low-copy buffer-backed arrays
 
 ```swift
@@ -127,6 +162,13 @@ let points = ContiguousArray<Float>([
 let array = try DataArray.points(
     contiguousValues: points,
     format: .appended
+)
+
+let legacyScalars = DataArray(
+    uncheckedType: "Float32",
+    name: "LegacyScalars",
+    numberOfComponents: 1,
+    values: ["1.0", "2.0"]
 )
 ```
 
@@ -159,6 +201,31 @@ let grid = UnstructuredGrid(
 try VTKWriter.write(VTUFile(unstructuredGrid: grid), to: URL(fileURLWithPath: "cells.vtu"))
 ```
 
+### Write polyhedron cells
+
+```swift
+import Foundation
+import VTKKit
+
+let file = try VTUFile.polyhedronMesh(
+    points: [
+        0.0 as Float, 0.0, 0.0,
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0,
+    ],
+    cells: [
+        [
+            [0, 1, 2],
+            [0, 1, 3],
+            [1, 2, 3],
+            [0, 2, 3],
+        ],
+    ],
+    options: .init(dataArrayFormat: .appended)
+)
+```
+
 ### Write a parallel `.pvtp` or `.pvtu` wrapper
 
 ```swift
@@ -179,6 +246,24 @@ let wrapper = try PVTPFile.collection(
 )
 
 try VTKWriter.write(wrapper, to: URL(fileURLWithPath: "frame_0000.pvtp"))
+```
+
+### Write partitioned piece files plus manifest
+
+```swift
+import Foundation
+import VTKKit
+
+let pieces = [
+    try PolyData.pointCloud(points: [0.0 as Float, 1.0, 2.0], format: .appended),
+    try PolyData.pointCloud(points: [3.0 as Float, 4.0, 5.0], format: .appended),
+]
+
+try VTKWriter.writePartitionedPolyData(
+    pieces: pieces,
+    manifestURL: URL(fileURLWithPath: "frame_0000.pvtp"),
+    options: .init(compression: .zlib, dataArrayFormat: .appended)
+)
 ```
 
 ### Write a `.pvd` time series
@@ -218,12 +303,19 @@ try await writer.append(file: "frame_0001.vtp", timestep: 1.0, group: "default",
 - Binary payloads are written with VTK's standard length-prefixed framing and
   base64 encoding. Appended payloads are emitted in a base64-encoded
   `<AppendedData>` section with per-array offsets.
+- Serial `.vtp` and `.vtu` writes stream those payloads to disk instead of
+  building one giant XML `String` before writing the file.
 - When `compression` is set on `VTKFile` or `VTUFile`, binary and appended
   arrays are chunked and compressed using the VTK XML compressor header format.
 - `headerType` controls the binary length prefix size for inline binary and
   appended arrays. The package currently supports `UInt32` and `UInt64`.
+- `VTKXMLFileOptions` gives one place to control `byteOrder`, `headerType`,
+  `compression`, and `dataArrayFormat` for higher-level file builders.
 - `.pvtp` and `.pvtu` files describe piece metadata and source files. The piece
   datasets themselves are still ordinary `.vtp` and `.vtu` files.
+- `PVDSeriesWriter` appends by truncating the closing footer and writing new
+  `<DataSet />` lines in place when the file uses the package's canonical PVD
+  layout, falling back to a full rewrite only when needed.
 - Validation catches common exporter mistakes such as wrong component counts,
   tuple-count mismatches, and inconsistent cell connectivity/offset arrays.
 - `Codable` is useful for testing, intermediate representations, and persistence

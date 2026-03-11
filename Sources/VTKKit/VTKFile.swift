@@ -155,8 +155,57 @@ public struct DataArray: Sendable, Equatable, Codable {
     public var values: String
     public var binaryStorage: DataArrayBinaryStorage?
 
+    @available(*, deprecated, message: "Prefer typed DataArray initializers or the explicit uncheckedType: initializer.")
     public init<Value: LosslessStringConvertible>(
         type: String,
+        name: String,
+        format: DataArrayFormat = .ascii,
+        numberOfComponents: Int,
+        values: [Value]
+    ) {
+        self.init(
+            uncheckedType: type,
+            name: name,
+            format: format,
+            numberOfComponents: numberOfComponents,
+            values: values
+        )
+    }
+
+    @available(*, deprecated, message: "Prefer typed DataArray initializers or the explicit uncheckedType: initializer.")
+    public init(
+        type: String,
+        name: String,
+        format: DataArrayFormat = .ascii,
+        numberOfComponents: Int
+    ) {
+        self.init(
+            uncheckedType: type,
+            name: name,
+            format: format,
+            numberOfComponents: numberOfComponents
+        )
+    }
+
+    @available(*, deprecated, message: "Prefer typed DataArray initializers or the explicit uncheckedType: initializer.")
+    public init(
+        type: String,
+        name: String,
+        format: DataArrayFormat = .binary,
+        numberOfComponents: Int,
+        binaryStorage: DataArrayBinaryStorage
+    ) {
+        self.init(
+            uncheckedType: type,
+            name: name,
+            format: format,
+            numberOfComponents: numberOfComponents,
+            binaryStorage: binaryStorage
+        )
+    }
+
+    public init<Value: LosslessStringConvertible>(
+        uncheckedType type: String,
         name: String,
         format: DataArrayFormat = .ascii,
         numberOfComponents: Int,
@@ -171,7 +220,7 @@ public struct DataArray: Sendable, Equatable, Codable {
     }
 
     public init(
-        type: String,
+        uncheckedType type: String,
         name: String,
         format: DataArrayFormat = .ascii,
         numberOfComponents: Int
@@ -185,7 +234,7 @@ public struct DataArray: Sendable, Equatable, Codable {
     }
 
     public init(
-        type: String,
+        uncheckedType type: String,
         name: String,
         format: DataArrayFormat = .binary,
         numberOfComponents: Int,
@@ -696,7 +745,7 @@ public enum VTKScalarType: String, Sendable, Codable, CaseIterable {
     }
 }
 
-private extension DataArray {
+extension DataArray {
     var parsedTokens: [Substring] {
         values.split(whereSeparator: \.isWhitespace)
     }
@@ -706,22 +755,32 @@ private extension DataArray {
         headerType: BinaryDataHeaderType,
         compression: VTKCompression?
     ) throws -> String {
+        try encodedBinaryData(
+            byteOrder: byteOrder,
+            headerType: headerType,
+            compression: compression
+        ).base64EncodedString()
+    }
+
+    func encodedBinaryData(
+        byteOrder: ByteOrder,
+        headerType: BinaryDataHeaderType,
+        compression: VTKCompression?
+    ) throws -> Data {
         let payload = try binaryPayload(byteOrder: byteOrder)
-        let encoded = if let compression {
-            try compression.encodedPayload(
+        if let compression {
+            return try compression.encodedPayload(
                 for: payload,
                 headerType: headerType,
                 byteOrder: byteOrder,
                 arrayName: name
             )
-        } else {
-            try headerType.prefixedPayload(
-                payload,
-                byteOrder: byteOrder,
-                arrayName: name
-            )
         }
-        return encoded.base64EncodedString()
+        return try headerType.prefixedPayload(
+            payload,
+            byteOrder: byteOrder,
+            arrayName: name
+        )
     }
 
     func binaryPayload(byteOrder: ByteOrder) throws -> Data {

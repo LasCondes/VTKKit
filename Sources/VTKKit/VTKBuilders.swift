@@ -27,7 +27,7 @@ public extension DataArray {
     ) throws {
         if format == .ascii {
             self.init(
-                type: Scalar.vtkScalarType.rawValue,
+                uncheckedType: Scalar.vtkScalarType.rawValue,
                 name: name,
                 format: format,
                 numberOfComponents: numberOfComponents,
@@ -35,7 +35,7 @@ public extension DataArray {
             )
         } else {
             self.init(
-                type: Scalar.vtkScalarType.rawValue,
+                uncheckedType: Scalar.vtkScalarType.rawValue,
                 name: name,
                 format: format,
                 numberOfComponents: numberOfComponents,
@@ -60,7 +60,7 @@ public extension DataArray {
             )
         } else {
             self.init(
-                type: Scalar.vtkScalarType.rawValue,
+                uncheckedType: Scalar.vtkScalarType.rawValue,
                 name: name,
                 format: format,
                 numberOfComponents: numberOfComponents,
@@ -85,7 +85,7 @@ public extension DataArray {
             )
         } else {
             self.init(
-                type: Scalar.vtkScalarType.rawValue,
+                uncheckedType: Scalar.vtkScalarType.rawValue,
                 name: name,
                 format: format,
                 numberOfComponents: numberOfComponents,
@@ -105,7 +105,7 @@ public extension DataArray {
         byteOrder: ByteOrder = .native
     ) throws {
         self.init(
-            type: scalarType.vtkScalarType.rawValue,
+            uncheckedType: scalarType.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: numberOfComponents,
@@ -156,7 +156,7 @@ public extension DataArray {
         format: DataArrayFormat = .ascii
     ) -> DataArray {
         DataArray(
-            type: Scalar.vtkScalarType.rawValue,
+            uncheckedType: Scalar.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: 1,
@@ -170,7 +170,7 @@ public extension DataArray {
         format: DataArrayFormat = .appended
     ) -> DataArray {
         DataArray(
-            type: Scalar.vtkScalarType.rawValue,
+            uncheckedType: Scalar.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: 1,
@@ -184,7 +184,7 @@ public extension DataArray {
         format: DataArrayFormat = .appended
     ) -> DataArray {
         DataArray(
-            type: Scalar.vtkScalarType.rawValue,
+            uncheckedType: Scalar.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: 1,
@@ -237,7 +237,7 @@ public extension DataArray {
         format: DataArrayFormat = .ascii
     ) -> DataArray {
         DataArray(
-            type: Scalar.vtkScalarType.rawValue,
+            uncheckedType: Scalar.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: 1,
@@ -251,7 +251,7 @@ public extension DataArray {
         format: DataArrayFormat = .appended
     ) -> DataArray {
         DataArray(
-            type: Scalar.vtkScalarType.rawValue,
+            uncheckedType: Scalar.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: 1,
@@ -265,7 +265,7 @@ public extension DataArray {
         format: DataArrayFormat = .appended
     ) -> DataArray {
         DataArray(
-            type: Scalar.vtkScalarType.rawValue,
+            uncheckedType: Scalar.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: 1,
@@ -422,6 +422,208 @@ public extension PolyData {
                         .indices(name: "offsets", values: offsets, format: format),
                     ]
                 )
+            ),
+            fieldData: fieldData
+        )
+    }
+
+    static func polygonMesh<PointScalar: VTKFloatingPointScalarValue>(
+        points: [PointScalar],
+        polygons: [[Int32]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii
+    ) throws -> PolyData {
+        try polygonMesh(
+            points: points,
+            polygons: polygons,
+            pointData: pointData,
+            fieldData: fieldData,
+            format: format,
+            indexType: Int32.self
+        )
+    }
+
+    static func polygonMesh<
+        PointScalar: VTKFloatingPointScalarValue,
+        IndexScalar: VTKIntegerScalarValue
+    >(
+        points: [PointScalar],
+        polygons: [[IndexScalar]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii,
+        indexType: IndexScalar.Type
+    ) throws -> PolyData {
+        let datasetPath = "PolyData.polygonMesh"
+        guard points.count.isMultiple(of: 3) else {
+            throw VTKWriter.Error.invalidComponentCount(
+                arrayName: "Points",
+                datasetPath: datasetPath,
+                valueCount: points.count,
+                numberOfComponents: 3
+            )
+        }
+
+        let flattenedPolygons = try flattenedPolygonConnectivity(
+            polygons: polygons,
+            datasetPath: datasetPath + "/Polys"
+        )
+
+        return PolyData(
+            piece: Piece(
+                numberOfPoints: points.count / 3,
+                numberOfPolys: polygons.count,
+                points: Points(dataArray: try .points(points, format: format)),
+                pointData: pointData,
+                polys: Polys(
+                    dataArray: [
+                        .indices(name: "connectivity", values: flattenedPolygons.connectivity, format: format),
+                        .indices(name: "offsets", values: flattenedPolygons.offsets, format: format),
+                    ]
+                )
+            ),
+            fieldData: fieldData
+        )
+    }
+
+    static func polygonMesh<
+        PointScalar: VTKFloatingPointScalarValue,
+        IndexScalar: VTKIntegerScalarValue
+    >(
+        points: [PointScalar],
+        polygonIndices: [IndexScalar],
+        polygonVertexCounts: [Int],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii,
+        indexType: IndexScalar.Type
+    ) throws -> PolyData {
+        try polygonMesh(
+            points: points,
+            polygons: try regroupPolygons(
+                connectivity: polygonIndices,
+                polygonVertexCounts: polygonVertexCounts,
+                datasetPath: "PolyData.polygonMesh/Polys"
+            ),
+            pointData: pointData,
+            fieldData: fieldData,
+            format: format,
+            indexType: indexType
+        )
+    }
+
+    static func triangulatedPolygonMesh<PointScalar: VTKFloatingPointScalarValue>(
+        points: [PointScalar],
+        polygons: [[Int32]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii
+    ) throws -> PolyData {
+        try triangulatedPolygonMesh(
+            points: points,
+            polygons: polygons,
+            pointData: pointData,
+            fieldData: fieldData,
+            format: format,
+            indexType: Int32.self
+        )
+    }
+
+    static func triangulatedPolygonMesh<
+        PointScalar: VTKFloatingPointScalarValue,
+        IndexScalar: VTKIntegerScalarValue
+    >(
+        points: [PointScalar],
+        polygons: [[IndexScalar]],
+        pointData: PointData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii,
+        indexType: IndexScalar.Type
+    ) throws -> PolyData {
+        let triangles = try triangulatedPolygons(
+            polygons: polygons,
+            datasetPath: "PolyData.triangulatedPolygonMesh/Polys"
+        )
+        return try triangleMesh(
+            points: points,
+            triangleIndices: triangles,
+            pointData: pointData,
+            fieldData: fieldData,
+            format: format,
+            indexType: indexType
+        )
+    }
+}
+
+public extension Cells {
+    static func polyhedra<IndexScalar: VTKIntegerScalarValue>(
+        _ cells: [[[IndexScalar]]],
+        format: DataArrayFormat = .ascii
+    ) throws -> Cells {
+        let encodedCells = try encodePolyhedronCells(cells, datasetPath: "UnstructuredGrid.polyhedronMesh/Cells")
+        return Cells(
+            dataArray: [
+                .indices(name: "connectivity", values: encodedCells.connectivity, format: format),
+                .indices(name: "offsets", values: encodedCells.offsets, format: format),
+                .cellTypes(Array(repeating: .polyhedron, count: cells.count), format: format),
+                .indices(name: "faces", values: encodedCells.faces, format: format),
+                .indices(name: "faceoffsets", values: encodedCells.faceOffsets, format: format),
+            ]
+        )
+    }
+}
+
+public extension UnstructuredGrid {
+    static func polyhedronMesh<PointScalar: VTKFloatingPointScalarValue>(
+        points: [PointScalar],
+        cells: [[[Int32]]],
+        pointData: PointData? = nil,
+        cellData: CellData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii
+    ) throws -> UnstructuredGrid {
+        try polyhedronMesh(
+            points: points,
+            cells: cells,
+            pointData: pointData,
+            cellData: cellData,
+            fieldData: fieldData,
+            format: format,
+            indexType: Int32.self
+        )
+    }
+
+    static func polyhedronMesh<
+        PointScalar: VTKFloatingPointScalarValue,
+        IndexScalar: VTKIntegerScalarValue
+    >(
+        points: [PointScalar],
+        cells: [[[IndexScalar]]],
+        pointData: PointData? = nil,
+        cellData: CellData? = nil,
+        fieldData: FieldData? = nil,
+        format: DataArrayFormat = .ascii,
+        indexType: IndexScalar.Type
+    ) throws -> UnstructuredGrid {
+        let datasetPath = "UnstructuredGrid.polyhedronMesh"
+        guard points.count.isMultiple(of: 3) else {
+            throw VTKWriter.Error.invalidComponentCount(
+                arrayName: "Points",
+                datasetPath: datasetPath,
+                valueCount: points.count,
+                numberOfComponents: 3
+            )
+        }
+
+        return UnstructuredGrid(
+            piece: UnstructuredPiece(
+                numberOfPoints: points.count / 3,
+                numberOfCells: cells.count,
+                points: Points(dataArray: try .points(points, format: format)),
+                cells: try .polyhedra(cells, format: format),
+                pointData: pointData,
+                cellData: cellData
             ),
             fieldData: fieldData
         )
@@ -682,4 +884,189 @@ private func exactInteger<Scalar: VTKIntegerScalarValue>(
     }
 
     return converted
+}
+
+private func flattenedPolygonConnectivity<IndexScalar: VTKIntegerScalarValue>(
+    polygons: [[IndexScalar]],
+    datasetPath: String
+) throws -> (connectivity: [IndexScalar], offsets: [IndexScalar]) {
+    guard polygons.isEmpty == false else {
+        return ([], [])
+    }
+
+    var connectivity: [IndexScalar] = []
+    connectivity.reserveCapacity(polygons.reduce(into: 0) { $0 += $1.count })
+
+    var offsets: [IndexScalar] = []
+    offsets.reserveCapacity(polygons.count)
+
+    var runningOffset = 0
+    for polygon in polygons {
+        guard polygon.count >= 3 else {
+            throw VTKWriter.Error.invalidCellLayout(
+                datasetPath: datasetPath,
+                reason: "Each polygon must contain at least 3 vertices."
+            )
+        }
+
+        connectivity.append(contentsOf: polygon)
+        runningOffset += polygon.count
+        offsets.append(try exactInteger(runningOffset, as: IndexScalar.self, datasetPath: datasetPath + "/offsets"))
+    }
+
+    return (connectivity, offsets)
+}
+
+private func regroupPolygons<IndexScalar: VTKIntegerScalarValue>(
+    connectivity: [IndexScalar],
+    polygonVertexCounts: [Int],
+    datasetPath: String
+) throws -> [[IndexScalar]] {
+    var polygons: [[IndexScalar]] = []
+    polygons.reserveCapacity(polygonVertexCounts.count)
+
+    var cursor = 0
+    for count in polygonVertexCounts {
+        guard count >= 3 else {
+            throw VTKWriter.Error.invalidCellLayout(
+                datasetPath: datasetPath,
+                reason: "Each polygon must contain at least 3 vertices."
+            )
+        }
+
+        let upperBound = cursor + count
+        guard upperBound <= connectivity.count else {
+            throw VTKWriter.Error.invalidCellLayout(
+                datasetPath: datasetPath,
+                reason: "Polygon connectivity ended before all vertices were consumed."
+            )
+        }
+
+        polygons.append(Array(connectivity[cursor..<upperBound]))
+        cursor = upperBound
+    }
+
+    guard cursor == connectivity.count else {
+        throw VTKWriter.Error.invalidCellLayout(
+            datasetPath: datasetPath,
+            reason: "Polygon connectivity contains trailing vertices beyond the supplied polygon counts."
+        )
+    }
+
+    return polygons
+}
+
+private func triangulatedPolygons<IndexScalar: VTKIntegerScalarValue>(
+    polygons: [[IndexScalar]],
+    datasetPath: String
+) throws -> [IndexScalar] {
+    var triangles: [IndexScalar] = []
+    triangles.reserveCapacity(polygons.reduce(into: 0) { $0 += max(0, ($1.count - 2) * 3) })
+
+    for polygon in polygons {
+        guard polygon.count >= 3 else {
+            throw VTKWriter.Error.invalidCellLayout(
+                datasetPath: datasetPath,
+                reason: "Each polygon must contain at least 3 vertices."
+            )
+        }
+
+        guard let firstVertex = polygon.first else {
+            continue
+        }
+
+        for index in 1..<(polygon.count - 1) {
+            triangles.append(firstVertex)
+            triangles.append(polygon[index])
+            triangles.append(polygon[index + 1])
+        }
+    }
+
+    return triangles
+}
+
+private func encodePolyhedronCells<IndexScalar: VTKIntegerScalarValue>(
+    _ cells: [[[IndexScalar]]],
+    datasetPath: String
+) throws -> (
+    connectivity: [IndexScalar],
+    offsets: [IndexScalar],
+    faces: [IndexScalar],
+    faceOffsets: [IndexScalar]
+) {
+    var connectivity: [IndexScalar] = []
+    var offsets: [IndexScalar] = []
+    var faces: [IndexScalar] = []
+    var faceOffsets: [IndexScalar] = []
+
+    offsets.reserveCapacity(cells.count)
+    faceOffsets.reserveCapacity(cells.count)
+
+    var runningConnectivityOffset = 0
+    var runningFaceOffset = 0
+
+    for (cellIndex, cellFaces) in cells.enumerated() {
+        guard cellFaces.isEmpty == false else {
+            throw VTKWriter.Error.invalidCellLayout(
+                datasetPath: datasetPath,
+                reason: "Polyhedron cell \(cellIndex) must contain at least one face."
+            )
+        }
+
+        var uniqueVertices: [IndexScalar] = []
+        uniqueVertices.reserveCapacity(cellFaces.reduce(into: 0) { $0 += $1.count })
+
+        for face in cellFaces {
+            guard face.count >= 3 else {
+                throw VTKWriter.Error.invalidCellLayout(
+                    datasetPath: datasetPath,
+                    reason: "Each polyhedron face must contain at least 3 vertices."
+                )
+            }
+
+            for vertex in face where uniqueVertices.contains(vertex) == false {
+                uniqueVertices.append(vertex)
+            }
+        }
+
+        connectivity.append(contentsOf: uniqueVertices)
+        runningConnectivityOffset += uniqueVertices.count
+        offsets.append(
+            try exactInteger(
+                runningConnectivityOffset,
+                as: IndexScalar.self,
+                datasetPath: datasetPath + "/offsets"
+            )
+        )
+
+        faces.append(
+            try exactInteger(
+                cellFaces.count,
+                as: IndexScalar.self,
+                datasetPath: datasetPath + "/faces"
+            )
+        )
+
+        for face in cellFaces {
+            faces.append(
+                try exactInteger(
+                    face.count,
+                    as: IndexScalar.self,
+                    datasetPath: datasetPath + "/faces"
+                )
+            )
+            faces.append(contentsOf: face)
+        }
+
+        runningFaceOffset = faces.count
+        faceOffsets.append(
+            try exactInteger(
+                runningFaceOffset,
+                as: IndexScalar.self,
+                datasetPath: datasetPath + "/faceoffsets"
+            )
+        )
+    }
+
+    return (connectivity, offsets, faces, faceOffsets)
 }

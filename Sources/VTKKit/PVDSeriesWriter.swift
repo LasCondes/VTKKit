@@ -38,6 +38,7 @@ public extension PVDFile {
 public actor PVDSeriesWriter {
     public let url: URL
     private var file: PVDFile
+    private var canAppendInPlace: Bool
 
     public init(
         url: URL,
@@ -48,14 +49,15 @@ public actor PVDSeriesWriter {
 
         if loadExisting, FileManager.default.fileExists(atPath: url.path) {
             file = try PVDFile.load(from: url)
+            canAppendInPlace = Self.hasCanonicalFooter(at: url)
         } else {
             file = initialFile
+            canAppendInPlace = true
         }
     }
 
     public func append(_ dataSet: PVDDataSet) throws {
-        file = file.appending(dataSet)
-        try VTKWriter.write(file, to: url)
+        try append(contentsOf: [dataSet])
     }
 
     public func append(
@@ -69,16 +71,116 @@ public actor PVDSeriesWriter {
 
     public func append(contentsOf dataSets: [PVDDataSet]) throws {
         file = file.appending(contentsOf: dataSets)
-        try VTKWriter.write(file, to: url)
+        try appendInPlace(dataSets)
     }
 
     public func replace(with file: PVDFile) throws {
         self.file = file
-        try VTKWriter.write(file, to: url)
+        try writeCanonicalDocument(file)
+        canAppendInPlace = true
     }
 
     public func snapshot() -> PVDFile {
         file
+    }
+
+    private func appendInPlace(_ dataSets: [PVDDataSet]) throws {
+        guard dataSets.isEmpty == false else {
+            return
+        }
+
+        if FileManager.default.fileExists(atPath: url.path) == false || canAppendInPlace == false {
+            try writeCanonicalDocument(file)
+            canAppendInPlace = true
+            return
+        }
+
+        let footerData = Self.footerData
+        do {
+            let handle = try FileHandle(forUpdating: url)
+            defer { try? handle.close() }
+
+            let fileSize = try handle.seekToEnd()
+            guard fileSize >= UInt64(footerData.count) else {
+                try writeCanonicalDocument(file)
+                canAppendInPlace = true
+                return
+            }
+
+            try handle.seek(toOffset: fileSize - UInt64(footerData.count))
+            let existingFooter = try handle.read(upToCount: footerData.count) ?? Data()
+            guard existingFooter == footerData else {
+                try writeCanonicalDocument(file)
+                canAppendInPlace = true
+                return
+            }
+
+            try handle.truncate(atOffset: fileSize - UInt64(footerData.count))
+            try handle.seekToEnd()
+            for dataSet in dataSets {
+                try handle.write(contentsOf: Self.dataSetLineData(for: dataSet))
+            }
+            try handle.write(contentsOf: footerData)
+        } catch let writerError as VTKWriter.Error {
+            throw writerError
+        } catch {
+            throw VTKWriter.Error.failedToWrite(path: url.path, underlying: error)
+        }
+    }
+
+    private func writeCanonicalDocument(_ file: PVDFile) throws {
+        let directoryURL = url.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        } catch {
+            throw VTKWriter.Error.failedToCreateDirectory(path: directoryURL.path, underlying: error)
+        }
+
+        let data = Self.headerData
+            + file.collection.dataSet.reduce(into: Data()) { partialResult, dataSet in
+                partialResult.append(Self.dataSetLineData(for: dataSet))
+            }
+            + Self.footerData
+
+        do {
+            try data.write(to: url)
+        } catch {
+            throw VTKWriter.Error.failedToWrite(path: url.path, underlying: error)
+        }
+    }
+
+    private static func hasCanonicalFooter(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return false
+        }
+        defer { try? handle.close() }
+
+        guard let fileSize = try? handle.seekToEnd(),
+              fileSize >= UInt64(footerData.count) else {
+            return false
+        }
+
+        try? handle.seek(toOffset: fileSize - UInt64(footerData.count))
+        let footer = try? handle.read(upToCount: footerData.count)
+        return footer == footerData
+    }
+
+    private static var headerData: Data {
+        Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <VTKFile type="Collection" version="0.1" byte_order="LittleEndian">
+          <Collection>
+        """.utf8) + Data([0x0A])
+    }
+
+    private static var footerData: Data {
+        Data("  </Collection>\n</VTKFile>\n".utf8)
+    }
+
+    private static func dataSetLineData(for dataSet: PVDDataSet) -> Data {
+        Data(
+            "    <DataSet timestep=\"\(String(dataSet.timestep).xmlEscaped)\" group=\"\(dataSet.group.xmlEscaped)\" part=\"\(String(dataSet.part).xmlEscaped)\" file=\"\(dataSet.file.xmlEscaped)\" />\n".utf8
+        )
     }
 }
 
