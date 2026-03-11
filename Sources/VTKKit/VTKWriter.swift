@@ -5,6 +5,9 @@ public enum VTKWriter {
         case failedToEncodeDocument
         case failedToCreateDirectory(path: String, underlying: Swift.Error)
         case failedToWrite(path: String, underlying: Swift.Error)
+        case unsupportedDataArrayType(arrayName: String, type: String)
+        case invalidDataArrayValue(arrayName: String, type: String, value: String)
+        case binaryPayloadTooLarge(arrayName: String, headerType: String, payloadByteCount: Int)
 
         public var errorDescription: String? {
             switch self {
@@ -14,6 +17,12 @@ public enum VTKWriter {
                 return "Could not create the output directory at '\(path)'. \(underlying.localizedDescription)"
             case .failedToWrite(let path, let underlying):
                 return "Could not write VTK output to '\(path)'. \(underlying.localizedDescription)"
+            case .unsupportedDataArrayType(let arrayName, let type):
+                return "DataArray '\(arrayName)' uses unsupported VTK type '\(type)'."
+            case .invalidDataArrayValue(let arrayName, let type, let value):
+                return "DataArray '\(arrayName)' contains value '\(value)' that cannot be encoded as \(type)."
+            case .binaryPayloadTooLarge(let arrayName, let headerType, let payloadByteCount):
+                return "DataArray '\(arrayName)' payload of \(payloadByteCount) bytes exceeds the \(headerType) header limit."
             }
         }
     }
@@ -36,7 +45,7 @@ public enum VTKWriter {
 
     private static func data(for document: XMLDocumentRenderable) throws -> Data {
         var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        document.renderXML(into: &xml)
+        try document.renderXML(into: &xml)
         guard let data = xml.data(using: .utf8) else {
             throw Error.failedToEncodeDocument
         }
@@ -62,7 +71,7 @@ public enum VTKWriter {
 }
 
 protocol XMLDocumentRenderable {
-    func renderXML(into xml: inout String)
+    func renderXML(into xml: inout String) throws
 }
 
 enum XMLTag {
@@ -123,4 +132,3 @@ extension String {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 }
-
