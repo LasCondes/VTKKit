@@ -1,6 +1,6 @@
 import Foundation
 
-public struct PVDDataSet: Sendable, Equatable {
+public struct PVDDataSet: Sendable, Equatable, Codable {
     public var timestep: Double
     public var group: String
     public var part: Int
@@ -14,8 +14,8 @@ public struct PVDDataSet: Sendable, Equatable {
     }
 }
 
-public struct PVDFile: Sendable, Equatable {
-    public struct Collection: Sendable, Equatable {
+public struct PVDFile: Sendable, Equatable, Codable {
+    public struct Collection: Sendable, Equatable, Codable {
         public var dataSet: [PVDDataSet]
 
         public init(dataSet: [PVDDataSet]) {
@@ -61,4 +61,3 @@ extension PVDFile: XMLDocumentRenderable {
         XMLTag.close("VTKFile", into: &xml, indentLevel: 0)
     }
 }
-

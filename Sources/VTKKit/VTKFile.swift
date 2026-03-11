@@ -1,33 +1,41 @@
 import Foundation
 
-public struct VTKFile: Sendable, Equatable {
-    public var type: String
+public enum ByteOrder: String, Sendable, Codable {
+    case littleEndian = "LittleEndian"
+    case bigEndian = "BigEndian"
+}
+
+public enum DataArrayFormat: String, Sendable, Codable {
+    case ascii
+}
+
+public struct VTKFile: Sendable, Equatable, Codable {
     public var version: String
-    public var byteOrder: String
+    public var byteOrder: ByteOrder
     public var polyData: PolyData
 
     public init(
         polyData: PolyData,
-        type: String = "PolyData",
         version: String = "0.1",
-        byteOrder: String = "LittleEndian"
+        byteOrder: ByteOrder = .littleEndian
     ) {
         self.polyData = polyData
-        self.type = type
         self.version = version
         self.byteOrder = byteOrder
     }
 }
 
-public struct PolyData: Sendable, Equatable {
+public struct PolyData: Sendable, Equatable, Codable {
+    public var fieldData: FieldData?
     public var piece: Piece
 
-    public init(piece: Piece) {
+    public init(piece: Piece, fieldData: FieldData? = nil) {
+        self.fieldData = fieldData
         self.piece = piece
     }
 }
 
-public struct FieldData: Sendable, Equatable {
+public struct FieldData: Sendable, Equatable, Codable {
     public var dataArray: [DataArray]
 
     public init(dataArray: [DataArray]) {
@@ -39,14 +47,13 @@ public struct FieldData: Sendable, Equatable {
     }
 }
 
-public struct Piece: Sendable, Equatable {
+public struct Piece: Sendable, Equatable, Codable {
     public var numberOfPoints: Int
     public var numberOfVerts: Int
     public var numberOfLines: Int
     public var numberOfStrips: Int
     public var numberOfPolys: Int
 
-    public var fieldData: FieldData?
     public var points: Points
     public var pointData: PointData?
     public var polys: Polys?
@@ -61,7 +68,6 @@ public struct Piece: Sendable, Equatable {
         points: Points,
         pointData: PointData? = nil,
         polys: Polys? = nil,
-        fieldData: FieldData? = nil,
         verts: Verts? = nil
     ) {
         self.numberOfPoints = numberOfPoints
@@ -69,7 +75,6 @@ public struct Piece: Sendable, Equatable {
         self.numberOfLines = numberOfLines
         self.numberOfStrips = numberOfStrips
         self.numberOfPolys = numberOfPolys
-        self.fieldData = fieldData
         self.points = points
         self.pointData = pointData
         self.polys = polys
@@ -77,7 +82,7 @@ public struct Piece: Sendable, Equatable {
     }
 }
 
-public struct Points: Sendable, Equatable {
+public struct Points: Sendable, Equatable, Codable {
     public var dataArray: DataArray
 
     public init(dataArray: DataArray) {
@@ -85,7 +90,7 @@ public struct Points: Sendable, Equatable {
     }
 }
 
-public struct PointData: Sendable, Equatable {
+public struct PointData: Sendable, Equatable, Codable {
     public var scalarsName: String?
     public var vectorsName: String?
     public var dataArray: [DataArray]
@@ -101,7 +106,7 @@ public struct PointData: Sendable, Equatable {
     }
 }
 
-public struct Polys: Sendable, Equatable {
+public struct Polys: Sendable, Equatable, Codable {
     public var dataArray: [DataArray]
 
     public init(dataArray: [DataArray]) {
@@ -113,7 +118,7 @@ public struct Polys: Sendable, Equatable {
     }
 }
 
-public struct Verts: Sendable, Equatable {
+public struct Verts: Sendable, Equatable, Codable {
     public var dataArray: [DataArray]
 
     public init(dataArray: [DataArray]) {
@@ -121,17 +126,17 @@ public struct Verts: Sendable, Equatable {
     }
 }
 
-public struct DataArray: Sendable, Equatable {
+public struct DataArray: Sendable, Equatable, Codable {
     public var type: String
     public var name: String
-    public var format: String
+    public var format: DataArrayFormat
     public var numberOfComponents: Int?
     public var values: String
 
     public init<Value: LosslessStringConvertible>(
         type: String,
         name: String,
-        format: String = "ascii",
+        format: DataArrayFormat = .ascii,
         numberOfComponents: Int,
         values: [Value]
     ) {
@@ -145,7 +150,7 @@ public struct DataArray: Sendable, Equatable {
     public init(
         type: String,
         name: String,
-        format: String = "ascii",
+        format: DataArrayFormat = .ascii,
         numberOfComponents: Int
     ) {
         self.type = type
@@ -161,9 +166,9 @@ extension VTKFile: XMLDocumentRenderable {
         XMLTag.open(
             "VTKFile",
             attributes: [
-                ("type", type),
+                ("type", "PolyData"),
                 ("version", version),
-                ("byte_order", byteOrder),
+                ("byte_order", byteOrder.rawValue),
             ],
             into: &xml,
             indentLevel: 0
@@ -176,6 +181,7 @@ extension VTKFile: XMLDocumentRenderable {
 extension PolyData {
     func renderXML(into xml: inout String, indentLevel: Int) {
         XMLTag.open("PolyData", into: &xml, indentLevel: indentLevel)
+        fieldData?.renderXML(into: &xml, indentLevel: indentLevel + 1)
         piece.renderXML(into: &xml, indentLevel: indentLevel + 1)
         XMLTag.close("PolyData", into: &xml, indentLevel: indentLevel)
     }
@@ -196,7 +202,6 @@ extension Piece {
             indentLevel: indentLevel
         )
 
-        fieldData?.renderXML(into: &xml, indentLevel: indentLevel + 1)
         points.renderXML(into: &xml, indentLevel: indentLevel + 1)
         pointData?.renderXML(into: &xml, indentLevel: indentLevel + 1)
         polys?.renderXML(into: &xml, indentLevel: indentLevel + 1)
@@ -269,7 +274,7 @@ extension DataArray {
             attributes: [
                 ("type", type),
                 ("Name", name),
-                ("format", format),
+                ("format", format.rawValue),
                 ("NumberOfComponents", numberOfComponents.map(String.init)),
             ],
             text: values,
@@ -278,4 +283,3 @@ extension DataArray {
         )
     }
 }
-

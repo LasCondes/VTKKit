@@ -24,6 +24,6 @@ let package = Package(
             name: "VTKKitTests",
             dependencies: ["VTKKit"]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )
-
