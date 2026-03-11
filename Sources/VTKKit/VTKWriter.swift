@@ -7,11 +7,16 @@ public enum VTKWriter {
         case failedToWrite(path: String, underlying: Swift.Error)
         case unsupportedDataArrayType(arrayName: String, type: String)
         case invalidDataArrayValue(arrayName: String, type: String, value: String)
+        case invalidBinaryStorage(arrayName: String, type: String, expectedByteCount: Int, actualByteCount: Int)
         case binaryPayloadTooLarge(arrayName: String, headerType: String, payloadByteCount: Int)
+        case compressionFailed(arrayName: String, algorithm: String)
+        case invalidCompressionConfiguration(reason: String)
         case invalidComponentCount(arrayName: String, datasetPath: String, valueCount: Int, numberOfComponents: Int)
         case invalidTupleCount(arrayName: String, datasetPath: String, expectedTupleCount: Int, actualTupleCount: Int)
         case invalidCellLayout(datasetPath: String, reason: String)
         case invalidSeriesDefinition(reason: String)
+        case invalidParallelDefinition(reason: String)
+        case invalidPVDDocument(path: String, reason: String)
         case numericOverflow(datasetPath: String, value: Int, targetType: String)
 
         public var errorDescription: String? {
@@ -26,8 +31,14 @@ public enum VTKWriter {
                 return "DataArray '\(arrayName)' uses unsupported VTK type '\(type)'."
             case .invalidDataArrayValue(let arrayName, let type, let value):
                 return "DataArray '\(arrayName)' contains value '\(value)' that cannot be encoded as \(type)."
+            case .invalidBinaryStorage(let arrayName, let type, let expectedByteCount, let actualByteCount):
+                return "DataArray '\(arrayName)' uses VTK type '\(type)' with \(actualByteCount) bytes of raw storage, expected \(expectedByteCount)."
             case .binaryPayloadTooLarge(let arrayName, let headerType, let payloadByteCount):
                 return "DataArray '\(arrayName)' payload of \(payloadByteCount) bytes exceeds the \(headerType) header limit."
+            case .compressionFailed(let arrayName, let algorithm):
+                return "DataArray '\(arrayName)' could not be compressed with \(algorithm)."
+            case .invalidCompressionConfiguration(let reason):
+                return "Invalid VTK compression configuration. \(reason)"
             case .invalidComponentCount(let arrayName, let datasetPath, let valueCount, let numberOfComponents):
                 return "DataArray '\(arrayName)' at '\(datasetPath)' has \(valueCount) values, which is not divisible by NumberOfComponents=\(numberOfComponents)."
             case .invalidTupleCount(let arrayName, let datasetPath, let expectedTupleCount, let actualTupleCount):
@@ -36,6 +47,10 @@ public enum VTKWriter {
                 return "Invalid cell layout at '\(datasetPath)'. \(reason)"
             case .invalidSeriesDefinition(let reason):
                 return "Invalid PVD series definition. \(reason)"
+            case .invalidParallelDefinition(let reason):
+                return "Invalid parallel dataset definition. \(reason)"
+            case .invalidPVDDocument(let path, let reason):
+                return "Invalid PVD document at '\(path)'. \(reason)"
             case .numericOverflow(let datasetPath, let value, let targetType):
                 return "Value \(value) at '\(datasetPath)' cannot be represented as \(targetType)."
             }
@@ -50,6 +65,14 @@ public enum VTKWriter {
         try data(for: file)
     }
 
+    public static func encode(_ file: PVTPFile) throws -> Data {
+        try data(for: file)
+    }
+
+    public static func encode(_ file: PVTUFile) throws -> Data {
+        try data(for: file)
+    }
+
     public static func encode(_ file: PVDFile) throws -> Data {
         try data(for: file)
     }
@@ -59,6 +82,14 @@ public enum VTKWriter {
     }
 
     public static func write(_ file: VTUFile, to url: URL) throws {
+        try writeData(encode(file), to: url)
+    }
+
+    public static func write(_ file: PVTPFile, to url: URL) throws {
+        try writeData(encode(file), to: url)
+    }
+
+    public static func write(_ file: PVTUFile, to url: URL) throws {
         try writeData(encode(file), to: url)
     }
 

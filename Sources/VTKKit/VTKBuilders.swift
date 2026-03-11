@@ -25,12 +25,91 @@ public extension DataArray {
         numberOfComponents: Int,
         values: [Scalar]
     ) throws {
+        if format == .ascii {
+            self.init(
+                type: Scalar.vtkScalarType.rawValue,
+                name: name,
+                format: format,
+                numberOfComponents: numberOfComponents,
+                values: values
+            )
+        } else {
+            self.init(
+                type: Scalar.vtkScalarType.rawValue,
+                name: name,
+                format: format,
+                numberOfComponents: numberOfComponents,
+                binaryStorage: .init(values: values)
+            )
+        }
+        try validateComponentCount(at: name)
+    }
+
+    init<Scalar: VTKScalarValue>(
+        name: String,
+        format: DataArrayFormat = .appended,
+        numberOfComponents: Int,
+        contiguousValues: ContiguousArray<Scalar>
+    ) throws {
+        if format == .ascii {
+            try self.init(
+                name: name,
+                format: format,
+                numberOfComponents: numberOfComponents,
+                values: Array(contiguousValues)
+            )
+        } else {
+            self.init(
+                type: Scalar.vtkScalarType.rawValue,
+                name: name,
+                format: format,
+                numberOfComponents: numberOfComponents,
+                binaryStorage: .init(contiguousValues: contiguousValues)
+            )
+            try validateComponentCount(at: name)
+        }
+    }
+
+    init<Scalar: VTKScalarValue>(
+        name: String,
+        format: DataArrayFormat = .appended,
+        numberOfComponents: Int,
+        buffer: UnsafeBufferPointer<Scalar>
+    ) throws {
+        if format == .ascii {
+            try self.init(
+                name: name,
+                format: format,
+                numberOfComponents: numberOfComponents,
+                values: Array(buffer)
+            )
+        } else {
+            self.init(
+                type: Scalar.vtkScalarType.rawValue,
+                name: name,
+                format: format,
+                numberOfComponents: numberOfComponents,
+                binaryStorage: .init(buffer: buffer)
+            )
+            try validateComponentCount(at: name)
+        }
+    }
+
+    init<Scalar: VTKScalarValue>(
+        name: String,
+        format: DataArrayFormat = .appended,
+        numberOfComponents: Int,
+        scalarType: Scalar.Type,
+        data: Data,
+        valueCount: Int,
+        byteOrder: ByteOrder = .native
+    ) throws {
         self.init(
-            type: Scalar.vtkScalarType.rawValue,
+            type: scalarType.vtkScalarType.rawValue,
             name: name,
             format: format,
             numberOfComponents: numberOfComponents,
-            values: values
+            binaryStorage: .init(data: data, valueCount: valueCount, byteOrder: byteOrder)
         )
         try validateComponentCount(at: name)
     }
@@ -44,6 +123,30 @@ public extension DataArray {
             format: format,
             numberOfComponents: 3,
             values: values
+        )
+    }
+
+    static func points<Scalar: VTKFloatingPointScalarValue>(
+        contiguousValues: ContiguousArray<Scalar>,
+        format: DataArrayFormat = .appended
+    ) throws -> DataArray {
+        try DataArray(
+            name: "Points",
+            format: format,
+            numberOfComponents: 3,
+            contiguousValues: contiguousValues
+        )
+    }
+
+    static func points<Scalar: VTKFloatingPointScalarValue>(
+        buffer: UnsafeBufferPointer<Scalar>,
+        format: DataArrayFormat = .appended
+    ) throws -> DataArray {
+        try DataArray(
+            name: "Points",
+            format: format,
+            numberOfComponents: 3,
+            buffer: buffer
         )
     }
 
@@ -61,6 +164,34 @@ public extension DataArray {
         )
     }
 
+    static func scalars<Scalar: VTKScalarValue>(
+        name: String,
+        contiguousValues: ContiguousArray<Scalar>,
+        format: DataArrayFormat = .appended
+    ) -> DataArray {
+        DataArray(
+            type: Scalar.vtkScalarType.rawValue,
+            name: name,
+            format: format,
+            numberOfComponents: 1,
+            binaryStorage: .init(contiguousValues: contiguousValues)
+        )
+    }
+
+    static func scalars<Scalar: VTKScalarValue>(
+        name: String,
+        buffer: UnsafeBufferPointer<Scalar>,
+        format: DataArrayFormat = .appended
+    ) -> DataArray {
+        DataArray(
+            type: Scalar.vtkScalarType.rawValue,
+            name: name,
+            format: format,
+            numberOfComponents: 1,
+            binaryStorage: .init(buffer: buffer)
+        )
+    }
+
     static func vectors<Scalar: VTKScalarValue>(
         name: String,
         values: [Scalar],
@@ -71,6 +202,32 @@ public extension DataArray {
             format: format,
             numberOfComponents: 3,
             values: values
+        )
+    }
+
+    static func vectors<Scalar: VTKScalarValue>(
+        name: String,
+        contiguousValues: ContiguousArray<Scalar>,
+        format: DataArrayFormat = .appended
+    ) throws -> DataArray {
+        try DataArray(
+            name: name,
+            format: format,
+            numberOfComponents: 3,
+            contiguousValues: contiguousValues
+        )
+    }
+
+    static func vectors<Scalar: VTKScalarValue>(
+        name: String,
+        buffer: UnsafeBufferPointer<Scalar>,
+        format: DataArrayFormat = .appended
+    ) throws -> DataArray {
+        try DataArray(
+            name: name,
+            format: format,
+            numberOfComponents: 3,
+            buffer: buffer
         )
     }
 
@@ -85,6 +242,34 @@ public extension DataArray {
             format: format,
             numberOfComponents: 1,
             values: values
+        )
+    }
+
+    static func indices<Scalar: VTKIntegerScalarValue>(
+        name: String,
+        contiguousValues: ContiguousArray<Scalar>,
+        format: DataArrayFormat = .appended
+    ) -> DataArray {
+        DataArray(
+            type: Scalar.vtkScalarType.rawValue,
+            name: name,
+            format: format,
+            numberOfComponents: 1,
+            binaryStorage: .init(contiguousValues: contiguousValues)
+        )
+    }
+
+    static func indices<Scalar: VTKIntegerScalarValue>(
+        name: String,
+        buffer: UnsafeBufferPointer<Scalar>,
+        format: DataArrayFormat = .appended
+    ) -> DataArray {
+        DataArray(
+            type: Scalar.vtkScalarType.rawValue,
+            name: name,
+            format: format,
+            numberOfComponents: 1,
+            binaryStorage: .init(buffer: buffer)
         )
     }
 
@@ -414,7 +599,10 @@ private extension VTKCellTopologyValidating {
 
 extension DataArray {
     var rawValueCount: Int {
-        values.split(whereSeparator: \.isWhitespace).count
+        if let binaryStorage {
+            return binaryStorage.valueCount
+        }
+        return values.split(whereSeparator: \.isWhitespace).count
     }
 
     func validateComponentCount(at datasetPath: String) throws {
@@ -448,7 +636,27 @@ extension DataArray {
     }
 
     func integerValues(at datasetPath: String) throws -> [Int] {
-        try values.split(whereSeparator: \.isWhitespace).map { token in
+        if let binaryStorage {
+            guard let scalarType = VTKScalarType(rawValue: type) else {
+                throw VTKWriter.Error.unsupportedDataArrayType(arrayName: name, type: type)
+            }
+
+            let renderedValues = try scalarType.renderedASCIIValues(
+                from: binaryStorage,
+                arrayName: name
+            )
+            return try renderedValues.split(whereSeparator: \.isWhitespace).map { token in
+                guard let value = Int(token) else {
+                    throw VTKWriter.Error.invalidCellLayout(
+                        datasetPath: datasetPath,
+                        reason: "Array '\(name)' contains non-integer token '\(token)'."
+                    )
+                }
+                return value
+            }
+        }
+
+        return try values.split(whereSeparator: \.isWhitespace).map { token in
             guard let value = Int(token) else {
                 throw VTKWriter.Error.invalidCellLayout(
                     datasetPath: datasetPath,

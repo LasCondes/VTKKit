@@ -3,6 +3,14 @@ import Foundation
 public enum ByteOrder: String, Sendable, Codable {
     case littleEndian = "LittleEndian"
     case bigEndian = "BigEndian"
+
+    public static var native: ByteOrder {
+        #if _endian(little)
+        .littleEndian
+        #else
+        .bigEndian
+        #endif
+    }
 }
 
 public enum DataArrayFormat: String, Sendable, Codable {
@@ -20,18 +28,21 @@ public struct VTKFile: Sendable, Equatable, Codable {
     public var version: String
     public var byteOrder: ByteOrder
     public var headerType: BinaryDataHeaderType
+    public var compression: VTKCompression?
     public var polyData: PolyData
 
     public init(
         polyData: PolyData,
         version: String = "0.1",
         byteOrder: ByteOrder = .littleEndian,
-        headerType: BinaryDataHeaderType = .uInt32
+        headerType: BinaryDataHeaderType = .uInt32,
+        compression: VTKCompression? = nil
     ) {
         self.polyData = polyData
         self.version = version
         self.byteOrder = byteOrder
         self.headerType = headerType
+        self.compression = compression
     }
 }
 
@@ -142,6 +153,7 @@ public struct DataArray: Sendable, Equatable, Codable {
     public var format: DataArrayFormat
     public var numberOfComponents: Int?
     public var values: String
+    public var binaryStorage: DataArrayBinaryStorage?
 
     public init<Value: LosslessStringConvertible>(
         type: String,
@@ -155,6 +167,7 @@ public struct DataArray: Sendable, Equatable, Codable {
         self.format = format
         self.numberOfComponents = numberOfComponents
         self.values = values.map { String($0) }.joined(separator: " ")
+        self.binaryStorage = nil
     }
 
     public init(
@@ -168,6 +181,34 @@ public struct DataArray: Sendable, Equatable, Codable {
         self.format = format
         self.numberOfComponents = numberOfComponents
         self.values = ""
+        self.binaryStorage = nil
+    }
+
+    public init(
+        type: String,
+        name: String,
+        format: DataArrayFormat = .binary,
+        numberOfComponents: Int,
+        binaryStorage: DataArrayBinaryStorage
+    ) {
+        self.type = type
+        self.name = name
+        self.format = format
+        self.numberOfComponents = numberOfComponents
+        self.values = ""
+        self.binaryStorage = binaryStorage
+    }
+}
+
+public struct DataArrayBinaryStorage: Sendable, Equatable, Codable {
+    public var data: Data
+    public var valueCount: Int
+    public var byteOrder: ByteOrder
+
+    public init(data: Data, valueCount: Int, byteOrder: ByteOrder = .native) {
+        self.data = data
+        self.valueCount = valueCount
+        self.byteOrder = byteOrder
     }
 }
 
@@ -176,7 +217,8 @@ extension VTKFile: XMLDocumentRenderable {
         try polyData.validate(at: "PolyData")
         var context = VTKXMLBinaryEncodingContext(
             byteOrder: byteOrder,
-            headerType: headerType
+            headerType: headerType,
+            compression: compression
         )
         XMLTag.open(
             "VTKFile",
@@ -185,6 +227,7 @@ extension VTKFile: XMLDocumentRenderable {
                 ("version", version),
                 ("byte_order", byteOrder.rawValue),
                 ("header_type", polyData.usesEncodedData ? headerType.rawValue : nil),
+                ("compressor", polyData.usesEncodedData ? compression?.vtkClassName : nil),
             ],
             into: &xml,
             indentLevel: 0
@@ -365,7 +408,7 @@ extension DataArray {
             XMLTag.text(
                 "DataArray",
                 attributes: attributes,
-                text: values,
+                text: try renderedTextValues(),
                 into: &xml,
                 indentLevel: indentLevel
             )
@@ -375,7 +418,8 @@ extension DataArray {
                 attributes: attributes,
                 text: try encodedBinaryChunk(
                     byteOrder: context.byteOrder,
-                    headerType: context.headerType
+                    headerType: context.headerType,
+                    compression: context.compression
                 ),
                 into: &xml,
                 indentLevel: indentLevel
@@ -396,18 +440,21 @@ extension DataArray {
 struct VTKXMLBinaryEncodingContext {
     var byteOrder: ByteOrder
     var headerType: BinaryDataHeaderType
+    var compression: VTKCompression?
     private var appendedSegments: [String] = []
     private var nextAppendedOffset = 0
 
-    init(byteOrder: ByteOrder, headerType: BinaryDataHeaderType) {
+    init(byteOrder: ByteOrder, headerType: BinaryDataHeaderType, compression: VTKCompression? = nil) {
         self.byteOrder = byteOrder
         self.headerType = headerType
+        self.compression = compression
     }
 
     mutating func appendedOffset(for dataArray: DataArray) throws -> Int {
         let encodedChunk = try dataArray.encodedBinaryChunk(
             byteOrder: byteOrder,
-            headerType: headerType
+            headerType: headerType,
+            compression: compression
         )
         let offset = nextAppendedOffset
         appendedSegments.append(encodedChunk)
@@ -436,6 +483,19 @@ public enum VTKScalarType: String, Sendable, Codable, CaseIterable {
     case uint64 = "UInt64"
     case float32 = "Float32"
     case float64 = "Float64"
+
+    var byteWidth: Int {
+        switch self {
+        case .int8, .uint8:
+            1
+        case .int16, .uint16:
+            2
+        case .int32, .uint32, .float32:
+            4
+        case .int64, .uint64, .float64:
+            8
+        }
+    }
 
     func encode(tokens: [Substring], byteOrder: ByteOrder, arrayName: String) throws -> Data {
         var data = Data()
@@ -520,6 +580,105 @@ public enum VTKScalarType: String, Sendable, Codable, CaseIterable {
         return data
     }
 
+    func encode(
+        storage: DataArrayBinaryStorage,
+        targetByteOrder: ByteOrder,
+        arrayName: String
+    ) throws -> Data {
+        let expectedByteCount = storage.valueCount * byteWidth
+        guard storage.data.count == expectedByteCount else {
+            throw VTKWriter.Error.invalidBinaryStorage(
+                arrayName: arrayName,
+                type: rawValue,
+                expectedByteCount: expectedByteCount,
+                actualByteCount: storage.data.count
+            )
+        }
+
+        guard byteWidth > 1, storage.byteOrder != targetByteOrder else {
+            return storage.data
+        }
+
+        return storage.data.byteSwapped(elementWidth: byteWidth)
+    }
+
+    func renderedASCIIValues(
+        from storage: DataArrayBinaryStorage,
+        arrayName: String
+    ) throws -> String {
+        let expectedByteCount = storage.valueCount * byteWidth
+        guard storage.data.count == expectedByteCount else {
+            throw VTKWriter.Error.invalidBinaryStorage(
+                arrayName: arrayName,
+                type: rawValue,
+                expectedByteCount: expectedByteCount,
+                actualByteCount: storage.data.count
+            )
+        }
+
+        var renderedValues: [String] = []
+        renderedValues.reserveCapacity(storage.valueCount)
+
+        switch self {
+        case .int8:
+            for value in storage.data {
+                renderedValues.append(String(Int8(bitPattern: value)))
+            }
+        case .uint8:
+            for value in storage.data {
+                renderedValues.append(String(value))
+            }
+        case .int16:
+            try renderedValues.appendDecodedIntegers(
+                from: storage,
+                as: Int16.self,
+                arrayName: arrayName
+            )
+        case .uint16:
+            try renderedValues.appendDecodedIntegers(
+                from: storage,
+                as: UInt16.self,
+                arrayName: arrayName
+            )
+        case .int32:
+            try renderedValues.appendDecodedIntegers(
+                from: storage,
+                as: Int32.self,
+                arrayName: arrayName
+            )
+        case .uint32:
+            try renderedValues.appendDecodedIntegers(
+                from: storage,
+                as: UInt32.self,
+                arrayName: arrayName
+            )
+        case .int64:
+            try renderedValues.appendDecodedIntegers(
+                from: storage,
+                as: Int64.self,
+                arrayName: arrayName
+            )
+        case .uint64:
+            try renderedValues.appendDecodedIntegers(
+                from: storage,
+                as: UInt64.self,
+                arrayName: arrayName
+            )
+        case .float32:
+            try renderedValues.appendDecodedFloat32s(
+                from: storage,
+                arrayName: arrayName
+            )
+        case .float64:
+            try renderedValues.appendDecodedFloat64s(
+                from: storage,
+                arrayName: arrayName
+            )
+        }
+
+        return renderedValues.joined(separator: " ")
+    }
+
     private func parse<Value: LosslessStringConvertible>(
         _ type: Value.Type,
         token: Substring,
@@ -544,14 +703,24 @@ private extension DataArray {
 
     func encodedBinaryChunk(
         byteOrder: ByteOrder,
-        headerType: BinaryDataHeaderType
+        headerType: BinaryDataHeaderType,
+        compression: VTKCompression?
     ) throws -> String {
         let payload = try binaryPayload(byteOrder: byteOrder)
-        let encoded = try headerType.prefixedPayload(
-            payload,
-            byteOrder: byteOrder,
-            arrayName: name
-        )
+        let encoded = if let compression {
+            try compression.encodedPayload(
+                for: payload,
+                headerType: headerType,
+                byteOrder: byteOrder,
+                arrayName: name
+            )
+        } else {
+            try headerType.prefixedPayload(
+                payload,
+                byteOrder: byteOrder,
+                arrayName: name
+            )
+        }
         return encoded.base64EncodedString()
     }
 
@@ -559,42 +728,64 @@ private extension DataArray {
         guard let scalarType = VTKScalarType(rawValue: type) else {
             throw VTKWriter.Error.unsupportedDataArrayType(arrayName: name, type: type)
         }
-        return try scalarType.encode(
-            tokens: parsedTokens,
-            byteOrder: byteOrder,
-            arrayName: name
-        )
+        if let binaryStorage {
+            return try scalarType.encode(
+                storage: binaryStorage,
+                targetByteOrder: byteOrder,
+                arrayName: name
+            )
+        }
+        return try scalarType.encode(tokens: parsedTokens, byteOrder: byteOrder, arrayName: name)
+    }
+
+    func renderedTextValues() throws -> String {
+        guard let binaryStorage else {
+            return values
+        }
+
+        guard let scalarType = VTKScalarType(rawValue: type) else {
+            throw VTKWriter.Error.unsupportedDataArrayType(arrayName: name, type: type)
+        }
+
+        return try scalarType.renderedASCIIValues(from: binaryStorage, arrayName: name)
     }
 }
 
-private extension BinaryDataHeaderType {
+extension BinaryDataHeaderType {
     func prefixedPayload(
         _ payload: Data,
         byteOrder: ByteOrder,
         arrayName: String
     ) throws -> Data {
         var data = Data()
-
-        switch self {
-        case .uInt32:
-            guard payload.count <= Int(UInt32.max) else {
-                throw VTKWriter.Error.binaryPayloadTooLarge(
-                    arrayName: arrayName,
-                    headerType: rawValue,
-                    payloadByteCount: payload.count
-                )
-            }
-            data.appendInteger(UInt32(payload.count), byteOrder: byteOrder)
-        case .uInt64:
-            data.appendInteger(UInt64(payload.count), byteOrder: byteOrder)
-        }
-
+        try appendHeaderValue(payload.count, into: &data, byteOrder: byteOrder, arrayName: arrayName)
         data.append(payload)
         return data
     }
+
+    func appendHeaderValue(
+        _ value: Int,
+        into data: inout Data,
+        byteOrder: ByteOrder,
+        arrayName: String
+    ) throws {
+        switch self {
+        case .uInt32:
+            guard value <= Int(UInt32.max) else {
+                throw VTKWriter.Error.binaryPayloadTooLarge(
+                    arrayName: arrayName,
+                    headerType: rawValue,
+                    payloadByteCount: value
+                )
+            }
+            data.appendInteger(UInt32(value), byteOrder: byteOrder)
+        case .uInt64:
+            data.appendInteger(UInt64(value), byteOrder: byteOrder)
+        }
+    }
 }
 
-private extension Data {
+extension Data {
     mutating func appendScalar<T>(_ value: T) {
         var value = value
         Swift.withUnsafeBytes(of: &value) { bytes in
@@ -619,5 +810,91 @@ private extension Data {
 
     mutating func appendFloat64(_ value: Float64, byteOrder: ByteOrder) {
         appendInteger(value.bitPattern, byteOrder: byteOrder)
+    }
+
+    func byteSwapped(elementWidth: Int) -> Data {
+        guard elementWidth > 1, isEmpty == false else {
+            return self
+        }
+
+        var swapped = Data(count: count)
+        withUnsafeBytes { sourceBytes in
+            swapped.withUnsafeMutableBytes { destinationBytes in
+                let source = sourceBytes.bindMemory(to: UInt8.self)
+                let destination = destinationBytes.bindMemory(to: UInt8.self)
+
+                for offset in stride(from: 0, to: count, by: elementWidth) {
+                    for index in 0..<elementWidth {
+                        destination[offset + index] = source[offset + (elementWidth - index - 1)]
+                    }
+                }
+            }
+        }
+        return swapped
+    }
+
+    func decodedInteger<T: FixedWidthInteger>(
+        at byteOffset: Int,
+        as type: T.Type,
+        byteOrder: ByteOrder
+    ) -> T {
+        var rawValue: T = 0
+        _ = Swift.withUnsafeMutableBytes(of: &rawValue) { destination in
+            copyBytes(to: destination, from: byteOffset..<(byteOffset + MemoryLayout<T>.size))
+        }
+        return switch byteOrder {
+        case .littleEndian:
+            T(littleEndian: rawValue)
+        case .bigEndian:
+            T(bigEndian: rawValue)
+        }
+    }
+}
+
+private extension Array where Element == String {
+    mutating func appendDecodedIntegers<T: FixedWidthInteger & CustomStringConvertible>(
+        from storage: DataArrayBinaryStorage,
+        as type: T.Type,
+        arrayName: String
+    ) throws {
+        reserveCapacity(count + storage.valueCount)
+        for byteOffset in stride(from: 0, to: storage.data.count, by: MemoryLayout<T>.size) {
+            let value = storage.data.decodedInteger(
+                at: byteOffset,
+                as: T.self,
+                byteOrder: storage.byteOrder
+            )
+            append(String(value))
+        }
+    }
+
+    mutating func appendDecodedFloat32s(
+        from storage: DataArrayBinaryStorage,
+        arrayName: String
+    ) throws {
+        reserveCapacity(count + storage.valueCount)
+        for byteOffset in stride(from: 0, to: storage.data.count, by: MemoryLayout<UInt32>.size) {
+            let value = storage.data.decodedInteger(
+                at: byteOffset,
+                as: UInt32.self,
+                byteOrder: storage.byteOrder
+            )
+            append(String(Float32(bitPattern: value)))
+        }
+    }
+
+    mutating func appendDecodedFloat64s(
+        from storage: DataArrayBinaryStorage,
+        arrayName: String
+    ) throws {
+        reserveCapacity(count + storage.valueCount)
+        for byteOffset in stride(from: 0, to: storage.data.count, by: MemoryLayout<UInt64>.size) {
+            let value = storage.data.decodedInteger(
+                at: byteOffset,
+                as: UInt64.self,
+                byteOrder: storage.byteOrder
+            )
+            append(String(Float64(bitPattern: value)))
+        }
     }
 }

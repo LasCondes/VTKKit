@@ -24,18 +24,21 @@ public struct VTUFile: Sendable, Equatable, Codable {
     public var version: String
     public var byteOrder: ByteOrder
     public var headerType: BinaryDataHeaderType
+    public var compression: VTKCompression?
     public var unstructuredGrid: UnstructuredGrid
 
     public init(
         unstructuredGrid: UnstructuredGrid,
         version: String = "0.1",
         byteOrder: ByteOrder = .littleEndian,
-        headerType: BinaryDataHeaderType = .uInt32
+        headerType: BinaryDataHeaderType = .uInt32,
+        compression: VTKCompression? = nil
     ) {
         self.unstructuredGrid = unstructuredGrid
         self.version = version
         self.byteOrder = byteOrder
         self.headerType = headerType
+        self.compression = compression
     }
 }
 
@@ -128,7 +131,8 @@ extension VTUFile: XMLDocumentRenderable {
         try unstructuredGrid.validate(at: "UnstructuredGrid")
         var context = VTKXMLBinaryEncodingContext(
             byteOrder: byteOrder,
-            headerType: headerType
+            headerType: headerType,
+            compression: compression
         )
 
         XMLTag.open(
@@ -138,6 +142,7 @@ extension VTUFile: XMLDocumentRenderable {
                 ("version", version),
                 ("byte_order", byteOrder.rawValue),
                 ("header_type", unstructuredGrid.usesEncodedData ? headerType.rawValue : nil),
+                ("compressor", unstructuredGrid.usesEncodedData ? compression?.vtkClassName : nil),
             ],
             into: &xml,
             indentLevel: 0
