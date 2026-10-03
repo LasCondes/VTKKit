@@ -1,0 +1,2 @@
+# Optional independent reader checks; no Python dependency in the Swift package.
+vtk>=9.5,<10

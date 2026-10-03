@@ -735,13 +735,15 @@ public extension PVDFile {
             )
         }
 
-        return PVDFile(
+        let file = PVDFile(
             collection: .init(
                 dataSet: zip(files, timesteps).map { file, timestep in
                     PVDDataSet(group: group, file: file, timestep: timestep, part: part)
                 }
             )
         )
+        try file.validate()
+        return file
     }
 
     static func series(groups: [SeriesGroup]) throws(VTKWriter.Error) -> PVDFile {
@@ -753,6 +755,9 @@ public extension PVDFile {
                     reason: "files.count (\(group.files.count)) must match timesteps.count (\(group.timesteps.count)) for group '\(group.group)'."
                 )
             }
+            try PVDFile(collection: .init(dataSet: zip(group.files, group.timesteps).map {
+                PVDDataSet(group: group.group, file: $0.0, timestep: $0.1, part: group.part)
+            })).validate()
 
             indexedSeries.append(
                 contentsOf: zip(group.files, group.timesteps).enumerated().map { itemIndex, pair in
@@ -804,6 +809,13 @@ extension FieldData {
 
 extension Piece {
     func validate(at datasetPath: String) throws(VTKWriter.Error) {
+        guard numberOfVerts >= 0, numberOfPolys >= 0, numberOfLines == 0, numberOfStrips == 0 else {
+            throw .invalidCellLayout(datasetPath: datasetPath,
+                                     reason: "Cell counts must be nonnegative; this model does not support Lines or Strips.")
+        }
+        guard numberOfVerts == 0 || verts != nil, numberOfPolys == 0 || polys != nil else {
+            throw .invalidCellLayout(datasetPath: datasetPath, reason: "Declared cells require matching topology arrays.")
+        }
         let pointTupleCount = try points.validate(
             expectedPointCount: numberOfPoints,
             datasetPath: datasetPath + "/Points"
@@ -815,10 +827,12 @@ extension Piece {
         )
         try polys?.validate(
             expectedCellCount: numberOfPolys,
+            pointCount: pointTupleCount,
             datasetPath: datasetPath + "/Polys"
         )
         try verts?.validate(
             expectedCellCount: numberOfVerts,
+            pointCount: pointTupleCount,
             datasetPath: datasetPath + "/Verts"
         )
     }
@@ -867,14 +881,16 @@ extension PointData {
 }
 
 extension Polys {
-    func validate(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
-        try validateCellTopology(expectedCellCount: expectedCellCount, datasetPath: datasetPath)
+    func validate(expectedCellCount: Int, pointCount: Int, datasetPath: String) throws(VTKWriter.Error) {
+        try validateCellTopology(expectedCellCount: expectedCellCount, pointCount: pointCount,
+                                 minimumCellSize: 3, datasetPath: datasetPath)
     }
 }
 
 extension Verts {
-    func validate(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
-        try validateCellTopology(expectedCellCount: expectedCellCount, datasetPath: datasetPath)
+    func validate(expectedCellCount: Int, pointCount: Int, datasetPath: String) throws(VTKWriter.Error) {
+        try validateCellTopology(expectedCellCount: expectedCellCount, pointCount: pointCount,
+                                 minimumCellSize: 1, datasetPath: datasetPath)
     }
 }
 
@@ -886,51 +902,24 @@ extension Polys: VTKCellTopologyValidating {}
 extension Verts: VTKCellTopologyValidating {}
 
 private extension VTKCellTopologyValidating {
-    func validateCellTopology(expectedCellCount: Int, datasetPath: String) throws(VTKWriter.Error) {
-        guard let connectivity = dataArray.first(where: { $0.name == "connectivity" }) else {
-            throw VTKWriter.Error.invalidCellLayout(
-                datasetPath: datasetPath,
-                reason: "Missing connectivity array."
-            )
-        }
-
-        guard let offsets = dataArray.first(where: { $0.name == "offsets" }) else {
-            throw VTKWriter.Error.invalidCellLayout(
-                datasetPath: datasetPath,
-                reason: "Missing offsets array."
-            )
-        }
-
-        let connectivityTupleCount = try connectivity.validatedTupleCount(at: datasetPath)
-        let offsetTupleCount = try offsets.validatedTupleCount(at: datasetPath)
-        guard offsetTupleCount == expectedCellCount else {
-            throw VTKWriter.Error.invalidTupleCount(
-                arrayName: offsets.name,
-                datasetPath: datasetPath,
-                expectedTupleCount: expectedCellCount,
-                actualTupleCount: offsetTupleCount
-            )
-        }
-
-        let offsetValues = try offsets.integerValues(at: datasetPath)
-        var previousOffset = 0
-        for offset in offsetValues {
-            guard offset >= previousOffset else {
-                throw VTKWriter.Error.invalidCellLayout(
-                    datasetPath: datasetPath,
-                    reason: "Offsets must be monotonically increasing."
-                )
+    func validateCellTopology(expectedCellCount: Int, pointCount: Int, minimumCellSize: Int,
+                              datasetPath: String) throws(VTKWriter.Error) {
+        let arrays = try uniqueTopologyArrays(dataArray, at: datasetPath)
+        let connectivity = try topologyArray("connectivity", in: arrays, at: datasetPath).topologyIntegers(at: datasetPath)
+        let offsets = try topologyArray("offsets", in: arrays, at: datasetPath).topologyIntegers(at: datasetPath)
+        try validateOffsets(offsets, valueCount: connectivity.count, cellCount: expectedCellCount,
+                            arrayName: "offsets", at: datasetPath)
+        try validatePointIndices(connectivity, pointCount: pointCount, at: datasetPath)
+        var start = 0
+        for (cell, end) in offsets.enumerated() {
+            guard end - start >= minimumCellSize else {
+                throw .invalidCellLayout(datasetPath: datasetPath,
+                                         reason: "Cell \(cell) requires at least \(minimumCellSize) points.")
             }
-            previousOffset = offset
-        }
-
-        guard offsetValues.last ?? 0 == connectivityTupleCount else {
-            throw VTKWriter.Error.invalidCellLayout(
-                datasetPath: datasetPath,
-                reason: "The final offset \(offsetValues.last ?? 0) must equal connectivity tuple count \(connectivityTupleCount)."
-            )
+            start = end
         }
     }
+
 }
 
 extension DataArray {
@@ -946,6 +935,9 @@ extension DataArray {
     }
 
     func validatedTupleCount(at datasetPath: String) throws(VTKWriter.Error) -> Int {
+        guard rawValueCount >= 0 else {
+            throw .invalidCellLayout(datasetPath: datasetPath, reason: "Array '\(name)' has a negative raw value count.")
+        }
         guard let numberOfComponents else {
             return rawValueCount
         }
@@ -972,44 +964,9 @@ extension DataArray {
     }
 
     func integerValues(at datasetPath: String) throws(VTKWriter.Error) -> [Int] {
-        if let binaryStorage {
-            guard let scalarType = VTKScalarType(rawValue: type) else {
-                throw VTKWriter.Error.unsupportedDataArrayType(arrayName: name, type: type)
-            }
-
-            let renderedValues = try scalarType.renderedASCIIValues(
-                from: binaryStorage,
-                arrayName: name
-            )
-            let tokens = renderedValues.split(whereSeparator: \.isWhitespace)
-            var integers: [Int] = []
-            integers.reserveCapacity(tokens.count)
-            for token in tokens {
-                guard let value = Int(token) else {
-                    throw VTKWriter.Error.invalidCellLayout(
-                        datasetPath: datasetPath,
-                        reason: "Array '\(name)' contains non-integer token '\(token)'."
-                    )
-                }
-                integers.append(value)
-            }
-            return integers
-        }
-
-        let tokens = values.split(whereSeparator: \.isWhitespace)
-        var integers: [Int] = []
-        integers.reserveCapacity(tokens.count)
-        for token in tokens {
-            guard let value = Int(token) else {
-                throw VTKWriter.Error.invalidCellLayout(
-                    datasetPath: datasetPath,
-                    reason: "Array '\(name)' contains non-integer token '\(token)'."
-                )
-            }
-            integers.append(value)
-        }
-        return integers
+        try topologyIntegers(at: datasetPath)
     }
+
 }
 
 private func exactInteger<Scalar: VTKIntegerScalarValue>(

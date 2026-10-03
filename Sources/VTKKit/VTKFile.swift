@@ -351,7 +351,8 @@ extension FieldData {
     ) throws(VTKWriter.Error) {
         XMLTag.open("FieldData", into: &xml, indentLevel: indentLevel)
         for element in dataArray {
-            try element.renderXML(into: &xml, indentLevel: indentLevel + 1, context: &context)
+            try element.renderXML(into: &xml, indentLevel: indentLevel + 1, context: &context,
+                                  numberOfTuples: element.validatedTupleCount(at: "FieldData"))
         }
         XMLTag.close("FieldData", into: &xml, indentLevel: indentLevel)
     }
@@ -443,13 +444,15 @@ extension DataArray {
     func renderXML(
         into xml: inout String,
         indentLevel: Int,
-        context: inout VTKXMLBinaryEncodingContext
+        context: inout VTKXMLBinaryEncodingContext,
+        numberOfTuples: Int? = nil
     ) throws(VTKWriter.Error) {
         let attributes: [(String, String?)] = [
             ("type", type),
             ("Name", name),
             ("format", format.rawValue),
             ("NumberOfComponents", numberOfComponents.map(String.init)),
+            ("NumberOfTuples", numberOfTuples.map(String.init)),
         ]
 
         switch format {
@@ -546,6 +549,17 @@ struct VTKXMLBinaryEncodingContext {
         }
     }
 
+    private func validateStorage(_ storage: DataArrayBinaryStorage, arrayName: String) throws(VTKWriter.Error) {
+        let (expectedByteCount, overflow) = storage.valueCount.multipliedReportingOverflow(by: byteWidth)
+        guard storage.valueCount >= 0, !overflow else {
+            throw .invalidCellLayout(datasetPath: "DataArray/\(arrayName)", reason: "Invalid raw value count.")
+        }
+        guard storage.data.count == expectedByteCount else {
+            throw .invalidBinaryStorage(arrayName: arrayName, type: rawValue,
+                                        expectedByteCount: expectedByteCount, actualByteCount: storage.data.count)
+        }
+    }
+
     func encode(tokens: [Substring], byteOrder: ByteOrder, arrayName: String) throws(VTKWriter.Error) -> Data {
         var data = Data()
 
@@ -634,15 +648,7 @@ struct VTKXMLBinaryEncodingContext {
         targetByteOrder: ByteOrder,
         arrayName: String
     ) throws(VTKWriter.Error) -> Data {
-        let expectedByteCount = storage.valueCount * byteWidth
-        guard storage.data.count == expectedByteCount else {
-            throw VTKWriter.Error.invalidBinaryStorage(
-                arrayName: arrayName,
-                type: rawValue,
-                expectedByteCount: expectedByteCount,
-                actualByteCount: storage.data.count
-            )
-        }
+        try validateStorage(storage, arrayName: arrayName)
 
         guard byteWidth > 1, storage.byteOrder != targetByteOrder else {
             return storage.data
@@ -655,15 +661,7 @@ struct VTKXMLBinaryEncodingContext {
         from storage: DataArrayBinaryStorage,
         arrayName: String
     ) throws(VTKWriter.Error) -> String {
-        let expectedByteCount = storage.valueCount * byteWidth
-        guard storage.data.count == expectedByteCount else {
-            throw VTKWriter.Error.invalidBinaryStorage(
-                arrayName: arrayName,
-                type: rawValue,
-                expectedByteCount: expectedByteCount,
-                actualByteCount: storage.data.count
-            )
-        }
+        try validateStorage(storage, arrayName: arrayName)
 
         var renderedValues: [String] = []
         renderedValues.reserveCapacity(storage.valueCount)
@@ -755,11 +753,34 @@ extension DataArray {
         headerType: BinaryDataHeaderType,
         compression: VTKCompression?
     ) throws(VTKWriter.Error) -> String {
-        try encodedBinaryData(
+        String(decoding: try encodedBinaryBase64Data(
             byteOrder: byteOrder,
             headerType: headerType,
             compression: compression
-        ).base64EncodedString()
+        ), as: UTF8.self)
+    }
+
+    func encodedBinaryBase64Data(
+        byteOrder: ByteOrder,
+        headerType: BinaryDataHeaderType,
+        compression: VTKCompression?
+    ) throws(VTKWriter.Error) -> Data {
+        let data = try encodedBinaryData(byteOrder: byteOrder, headerType: headerType, compression: compression)
+        guard compression != nil else { return data.base64EncodedData() }
+        // VTK reads a separately padded base64 header, then a separately encoded
+        // compressed payload. Encoding their concatenation loses the header boundary.
+        let width: Int
+        let blockCount: Int
+        switch headerType {
+        case .uInt32:
+            width = 4
+            blockCount = Int(data.decodedInteger(at: 0, as: UInt32.self, byteOrder: byteOrder))
+        case .uInt64:
+            width = 8
+            blockCount = Int(data.decodedInteger(at: 0, as: UInt64.self, byteOrder: byteOrder))
+        }
+        let boundary = (3 + blockCount) * width
+        return data.prefix(boundary).base64EncodedData() + data.dropFirst(boundary).base64EncodedData()
     }
 
     func encodedBinaryData(

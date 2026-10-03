@@ -205,12 +205,12 @@ private struct VTKStreamingBinaryLayout {
         var nextOffset = 0
         for array in appendedArrays {
             offsets.append(nextOffset)
-            let encodedByteCount = try array.encodedBinaryData(
+            let encodedByteCount = try array.encodedBinaryBase64Data(
                 byteOrder: byteOrder,
                 headerType: headerType,
                 compression: compression
             ).count
-            nextOffset += encodedByteCount.base64EncodedLength
+            nextOffset += encodedByteCount
         }
 
         self.offsets = offsets
@@ -229,12 +229,12 @@ private struct VTKStreamingBinaryLayout {
 
         try sink.write("\(String(repeating: "  ", count: indentLevel))<AppendedData encoding=\"base64\">_")
         for array in appendedArrays {
-            let encodedData = try array.encodedBinaryData(
+            let encodedData = try array.encodedBinaryBase64Data(
                 byteOrder: byteOrder,
                 headerType: headerType,
                 compression: compression
             )
-            try sink.write(encodedData.base64EncodedData())
+            try sink.write(encodedData)
         }
         try sink.write("</AppendedData>\n")
     }
@@ -311,7 +311,8 @@ private extension FieldData {
     ) throws(VTKWriter.Error) {
         try sink.writeOpenTag("FieldData", indentLevel: indentLevel)
         for element in dataArray {
-            try element.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context)
+            try element.writeStreamingXML(into: &sink, indentLevel: indentLevel + 1, context: &context,
+                                          numberOfTuples: element.validatedTupleCount(at: "FieldData"))
         }
         try sink.writeCloseTag("FieldData", indentLevel: indentLevel)
     }
@@ -502,13 +503,15 @@ private extension DataArray {
     func writeStreamingXML(
         into sink: inout XMLFileHandleSink,
         indentLevel: Int,
-        context: inout VTKStreamingRenderContext
+        context: inout VTKStreamingRenderContext,
+        numberOfTuples: Int? = nil
     ) throws(VTKWriter.Error) {
         let attributes: [(String, String?)] = [
             ("type", type),
             ("Name", name),
             ("format", format.rawValue),
             ("NumberOfComponents", numberOfComponents.map(String.init)),
+            ("NumberOfTuples", numberOfTuples.map(String.init)),
         ]
 
         switch format {
@@ -521,12 +524,12 @@ private extension DataArray {
             )
         case .binary:
             try sink.writeTagPrefix("DataArray", attributes: attributes, indentLevel: indentLevel)
-            let encodedData = try encodedBinaryData(
+            let encodedData = try encodedBinaryBase64Data(
                 byteOrder: context.byteOrder,
                 headerType: context.headerType,
                 compression: context.compression
             )
-            try sink.write(encodedData.base64EncodedData())
+            try sink.write(encodedData)
             try sink.writeTagSuffix("DataArray")
         case .appended:
             try sink.writeLeafTag(

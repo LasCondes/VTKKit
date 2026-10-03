@@ -32,6 +32,7 @@ public struct PVDFile: Sendable, Equatable, Codable {
 
 extension PVDFile: XMLDocumentRenderable {
     func renderXML(into xml: inout String) throws(VTKWriter.Error) {
+        try validate()
         XMLTag.open(
             "VTKFile",
             attributes: [
@@ -59,5 +60,21 @@ extension PVDFile: XMLDocumentRenderable {
         }
         XMLTag.close("Collection", into: &xml, indentLevel: 1)
         XMLTag.close("VTKFile", into: &xml, indentLevel: 0)
+    }
+}
+
+extension PVDFile {
+    func validate() throws(VTKWriter.Error) {
+        for (index, dataSet) in collection.dataSet.enumerated() {
+            guard dataSet.timestep.isFinite else {
+                throw .invalidSeriesDefinition(reason: "DataSet \(index) requires a finite timestep.")
+            }
+            guard dataSet.part >= 0 else {
+                throw .invalidSeriesDefinition(reason: "DataSet \(index) requires a nonnegative part number.")
+            }
+            guard !dataSet.file.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw .invalidSeriesDefinition(reason: "DataSet \(index) requires a file reference.")
+            }
+        }
     }
 }

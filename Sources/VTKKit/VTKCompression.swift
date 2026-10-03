@@ -53,7 +53,7 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         for chunk in chunks {
             try compressedChunks.append(compress(chunk: chunk, arrayName: arrayName))
         }
-        let lastBlockSize = chunks.last?.count ?? 0
+        let lastBlockSize = payload.count % blockSize
 
         var data = Data()
         try headerType.appendHeaderValue(chunks.count, into: &data, byteOrder: byteOrder, arrayName: arrayName)
@@ -75,8 +75,27 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         guard chunk.isEmpty == false else {
             return Data()
         }
+        if algorithm == .lz4 {
+            // VTK uses raw LZ4 blocks, rather than Apple's framed LZ4 stream.
+            // Apple's implementation needs additional working room beyond LZ4's
+            // formal bound, even for short literal-only blocks.
+            let capacity = max(4 * 1024, chunk.count + chunk.count / 255 + 128)
+            var output = Data(count: capacity)
+            let count = output.withUnsafeMutableBytes { destination in
+                chunk.withUnsafeBytes { source in
+                    compression_encode_buffer(destination.bindMemory(to: UInt8.self).baseAddress!, capacity,
+                                              source.bindMemory(to: UInt8.self).baseAddress!, chunk.count,
+                                              nil, COMPRESSION_LZ4_RAW)
+                }
+            }
+            guard count > 0 else {
+                throw .compressionFailed(arrayName: arrayName, algorithm: algorithm.rawValue)
+            }
+            output.count = count
+            return output
+        }
 
-        let destinationBufferSize = Swift.max(blockSize, 4 * 1024)
+        let destinationBufferSize = Swift.max(chunk.count, 4 * 1024)
         let destinationBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: destinationBufferSize)
         defer { destinationBuffer.deallocate() }
 
@@ -102,6 +121,9 @@ public struct VTKCompression: Sendable, Equatable, Codable {
                 return
             }
             defer { compression_stream_destroy(&stream) }
+            // Initialization resets the stream's pointers and sizes.
+            stream.src_ptr = sourceBytes.baseAddress!
+            stream.src_size = sourceBytes.count
 
             repeat {
                 stream.dst_ptr = destinationBuffer
@@ -123,6 +145,20 @@ public struct VTKCompression: Sendable, Equatable, Codable {
 
         if let compressionError {
             throw compressionError
+        }
+
+        if algorithm == .zlib {
+            // Apple's encoder produces raw DEFLATE. VTK's zlib reader requires
+            // the RFC 1950 header and Adler-32 trailer around each block.
+            var framed = Data([0x78, 0x9c])
+            framed.append(output)
+            var a: UInt32 = 1, b: UInt32 = 0
+            for byte in chunk {
+                a = (a + UInt32(byte)) % 65_521
+                b = (b + a) % 65_521
+            }
+            framed.appendInteger((b << 16) | a, byteOrder: .bigEndian)
+            return framed
         }
 
         return output

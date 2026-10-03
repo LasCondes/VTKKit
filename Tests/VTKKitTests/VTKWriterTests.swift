@@ -53,7 +53,7 @@ struct VTKWriterTests {
 
         #expect(xml.contains("<VTKFile type=\"PolyData\" version=\"0.1\" byte_order=\"LittleEndian\">"))
         #expect(xml.contains("<PolyData>\n    <FieldData>"))
-        #expect(xml.contains("<DataArray type=\"Float64\" Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">1.5</DataArray>"))
+        #expect(xml.contains("<DataArray type=\"Float64\" Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\" NumberOfTuples=\"1\">1.5</DataArray>"))
         #expect(xml.contains("<PointData Scalars=\"Radius\">"))
         #expect(xml.contains("<DataArray type=\"Float32\" Name=\"Radius\" format=\"ascii\" NumberOfComponents=\"1\">0.5</DataArray>"))
         #expect(xml.contains("<Verts>"))
@@ -206,7 +206,9 @@ struct VTKWriterTests {
         let data = try VTKWriter.encode(vtk)
         let xml = try #require(String(data: data, encoding: .utf8))
         let encodedArray = try #require(try extractDataArrayText(named: "Points", from: xml))
-        let encodedData = try #require(Data(base64Encoded: encodedArray))
+        let header = try #require(Data(base64Encoded: String(encodedArray.prefix(24))))
+        let payload = try #require(Data(base64Encoded: String(encodedArray.dropFirst(24))))
+        let encodedData = header + payload
         var byteOffset = 0
         let blockCount = try readHeaderValue(
             from: encodedData,
@@ -410,7 +412,7 @@ struct VTKWriterTests {
         #expect(xml.contains("NumberOfPolys=\"1\""))
         #expect(xml.contains("<Polys>"))
         #expect(xml.contains("Name=\"offsets\" format=\"ascii\" NumberOfComponents=\"1\">3</DataArray>"))
-        #expect(xml.contains("Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\">2.0</DataArray>"))
+        #expect(xml.contains("Name=\"TimeValue\" format=\"ascii\" NumberOfComponents=\"1\" NumberOfTuples=\"1\">2.0</DataArray>"))
     }
 
     @Test
@@ -841,7 +843,7 @@ struct VTKWriterTests {
         )
 
         try runProcess(
-            executable: "/usr/bin/python3",
+            executable: vtkPythonPath,
             arguments: [
                 "-c",
                 vtkPythonCompatibilityScript(
@@ -964,13 +966,17 @@ private func readHeaderValue(
 private func hasPythonVTK() -> Bool {
     do {
         try runProcess(
-            executable: "/usr/bin/python3",
+            executable: vtkPythonPath,
             arguments: ["-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('vtk') else 1)"]
         )
         return true
     } catch {
         return false
     }
+}
+
+private var vtkPythonPath: String {
+    ProcessInfo.processInfo.environment["VTKKIT_PYTHON"] ?? "/usr/bin/python3"
 }
 
 private func findExecutable(named name: String) -> String? {
@@ -1006,13 +1012,17 @@ private func runProcess(executable: String, arguments: [String]) throws {
 
     let standardError = Pipe()
     process.standardError = standardError
-    process.standardOutput = Pipe()
+    process.standardOutput = FileHandle.nullDevice
 
     try process.run()
+    let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+    DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeout)
+    defer { timeout.cancel() }
+    let errors = standardError.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
 
     guard process.terminationStatus == 0 else {
-        let stderr = String(data: standardError.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: errors, encoding: .utf8) ?? ""
         throw TestSupportError.message("External compatibility runtime failed: \(stderr)")
     }
 }

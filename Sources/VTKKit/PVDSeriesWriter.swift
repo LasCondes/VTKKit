@@ -16,11 +16,14 @@ public extension PVDFile {
         let delegate = PVDXMLParserDelegate()
         parser.delegate = delegate
 
-        if parser.parse(), delegate.failureReason == nil {
-            return PVDFile(collection: .init(dataSet: delegate.dataSets))
+        if parser.parse(), delegate.failureReason == nil, delegate.foundCollection {
+            let file = PVDFile(collection: .init(dataSet: delegate.dataSets))
+            do { try file.validate() }
+            catch { throw .invalidPVDDocument(path: url.path, reason: error.localizedDescription) }
+            return file
         }
 
-        let failureReason = delegate.failureReason ?? parser.parserError?.localizedDescription ?? "Unknown XML parsing failure."
+        let failureReason = delegate.failureReason ?? parser.parserError?.localizedDescription ?? "Missing VTK Collection document."
         throw VTKWriter.Error.invalidPVDDocument(path: url.path, reason: failureReason)
     }
 
@@ -51,6 +54,7 @@ public actor PVDSeriesWriter {
             file = try PVDFile.load(from: url)
             canAppendInPlace = Self.hasCanonicalFooter(at: url)
         } else {
+            try initialFile.validate()
             file = initialFile
             canAppendInPlace = true
         }
@@ -70,13 +74,17 @@ public actor PVDSeriesWriter {
     }
 
     public func append(contentsOf dataSets: [PVDDataSet]) throws(VTKWriter.Error) {
-        file = file.appending(contentsOf: dataSets)
-        try appendInPlace(dataSets)
+        guard !dataSets.isEmpty else { return }
+        let next = file.appending(contentsOf: dataSets)
+        try next.validate()
+        try appendInPlace(dataSets, nextFile: next)
+        file = next
     }
 
     public func replace(with file: PVDFile) throws(VTKWriter.Error) {
-        self.file = file
+        try file.validate()
         try writeCanonicalDocument(file)
+        self.file = file
         canAppendInPlace = true
     }
 
@@ -84,13 +92,13 @@ public actor PVDSeriesWriter {
         file
     }
 
-    private func appendInPlace(_ dataSets: [PVDDataSet]) throws(VTKWriter.Error) {
+    private func appendInPlace(_ dataSets: [PVDDataSet], nextFile: PVDFile) throws(VTKWriter.Error) {
         guard dataSets.isEmpty == false else {
             return
         }
 
         if FileManager.default.fileExists(atPath: url.path) == false || canAppendInPlace == false {
-            try writeCanonicalDocument(file)
+            try writeCanonicalDocument(nextFile)
             canAppendInPlace = true
             return
         }
@@ -102,7 +110,7 @@ public actor PVDSeriesWriter {
 
             let fileSize = try handle.seekToEnd()
             guard fileSize >= UInt64(footerData.count) else {
-                try writeCanonicalDocument(file)
+                try writeCanonicalDocument(nextFile)
                 canAppendInPlace = true
                 return
             }
@@ -110,7 +118,7 @@ public actor PVDSeriesWriter {
             try handle.seek(toOffset: fileSize - UInt64(footerData.count))
             let existingFooter = try handle.read(upToCount: footerData.count) ?? Data()
             guard existingFooter == footerData else {
-                try writeCanonicalDocument(file)
+                try writeCanonicalDocument(nextFile)
                 canAppendInPlace = true
                 return
             }
@@ -143,7 +151,7 @@ public actor PVDSeriesWriter {
             + Self.footerData
 
         do {
-            try data.write(to: url)
+            try data.write(to: url, options: .atomic)
         } catch {
             throw VTKWriter.Error.failedToWrite(path: url.path, underlying: error)
         }
@@ -187,6 +195,8 @@ public actor PVDSeriesWriter {
 private final class PVDXMLParserDelegate: NSObject, XMLParserDelegate {
     var dataSets: [PVDDataSet] = []
     var failureReason: String?
+    var foundCollection = false
+    private var elements: [String] = []
 
     func parser(
         _ parser: XMLParser,
@@ -195,9 +205,29 @@ private final class PVDXMLParserDelegate: NSObject, XMLParserDelegate {
         qualifiedName qName: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
-        guard elementName == "DataSet" else {
+        switch elements {
+        case []:
+            guard elementName == "VTKFile", attributeDict["type"] == "Collection" else {
+                fail(parser, reason: "The root must be a VTKFile of type Collection.")
+                return
+            }
+        case ["VTKFile"]:
+            guard elementName == "Collection", !foundCollection else {
+                fail(parser, reason: "Expected one Collection element inside VTKFile.")
+                return
+            }
+            foundCollection = true
+        case ["VTKFile", "Collection"]:
+            guard elementName == "DataSet" else {
+                fail(parser, reason: "Collection may only contain DataSet elements.")
+                return
+            }
+        default:
+            fail(parser, reason: "Unexpected nested element '\(elementName)'.")
             return
         }
+        elements.append(elementName)
+        guard elementName == "DataSet" else { return }
 
         guard let file = attributeDict["file"], file.isEmpty == false else {
             fail(parser, reason: "Encountered a DataSet element without a file attribute.")
@@ -224,6 +254,17 @@ private final class PVDXMLParserDelegate: NSObject, XMLParserDelegate {
                 part: part
             )
         )
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?) {
+        if elements.last == elementName { elements.removeLast() }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            fail(parser, reason: "Unexpected text inside a PVD collection.")
+        }
     }
 
     private func fail(_ parser: XMLParser, reason: String) {
