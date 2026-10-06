@@ -5,17 +5,26 @@ parallel PolyData (`.pvtp`), UnstructuredGrid (`.vtu`), parallel
 UnstructuredGrid (`.pvtu`), and PVD collection (`.pvd`) files without taking a
 dependency on a larger engine or app codebase.
 
-The package targets Swift 6 and uses plain Swift value types for the document
+The package requires Swift 6.4 and uses plain Swift value types for the document
 model. Those types are `Codable`, but XML emission stays custom because VTK XML
 does not map cleanly onto Foundation's `Codable` support without adding an XML
 encoder dependency.
+
+## Requirements
+
+- Swift 6.4 or later, using Swift 6 language mode
+- Xcode 27 or later for Apple platform builds
+- macOS 27, iOS/iPadOS 27, tvOS 27, watchOS 27, or visionOS 27 or later
+
+These minimums apply starting with VTKKit 0.11.0. Applications supporting earlier
+toolchains or operating systems can use the 0.10.x release line.
 
 ## Installation
 
 Add the package to your Swift package dependencies:
 
 ```swift
-.package(url: "https://github.com/LasCondes/VTKKit.git", from: "0.10.0")
+.package(url: "https://github.com/LasCondes/VTKKit.git", from: "0.11.0")
 ```
 
 Then add `VTKKit` to the consuming target's dependencies, or add the same
@@ -447,3 +456,9 @@ PolyData and parallel wrappers. The latest local run used VTK 9.7.1.
 ParaView PVD-reader verification runs when `pvpython` is on `PATH`. It is
 independent of the VTK Python checks. See [CHANGELOG.md](CHANGELOG.md) for the
 compatibility fixes and stricter validation behavior.
+
+GitHub Actions runs debug and release tests on macOS 27 with Xcode 27. It installs
+the VTK Python runtime and checks that it imports before running the suite, so
+the VTK reader checks are exercised in CI. Separate jobs compile the library for
+iOS, tvOS, watchOS, and visionOS. ParaView checks remain optional until `pvpython`
+is available on the runner.

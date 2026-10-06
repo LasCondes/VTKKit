@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 - 2026-10-06
+
+- Require Swift 6.4 and Xcode 27, while keeping Swift 6 language mode.
+- Raise all supported Apple platform minimums to version 27: macOS,
+  iOS/iPadOS, tvOS, watchOS, and visionOS.
+- Add GitHub Actions debug and release testing with the real VTK Python reader
+  runtime, plus compile checks for iOS, tvOS, watchOS, and visionOS.
+- Document the toolchain/platform requirements and automated verification.
+
+This release raises deployment targets and the minimum Swift toolchain.
+Applications supporting earlier environments should stay on the 0.10.x line.
+The VTK document APIs and serialized formats are unchanged.
+
 ## 0.10.0 — 2026-10-03
 
 - Add `UnstructuredGrid`/`VTUFile.triangleMesh` and `tetrahedronMesh` builders,
