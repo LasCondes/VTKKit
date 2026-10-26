@@ -1,5 +1,4 @@
 import Foundation
-import simd
 
 @frozen public enum PolygonTriangulationStrategy: String, Sendable, Codable, CaseIterable {
     case fan
@@ -99,7 +98,7 @@ private func projectedPolygon<IndexScalar: VTKIntegerScalarValue>(
 ) throws(VTKWriter.Error) -> ProjectedPolygon<IndexScalar> {
     let polygon3D = polygon.map { pointPositions[Int(exactly: $0)!] }
     let normal = newellNormal(polygon3D)
-    let normalLength = simd_length(normal)
+    let normalLength = length(normal)
     guard normalLength > 1e-12 else {
         throw VTKWriter.Error.invalidCellLayout(
             datasetPath: datasetPath,
@@ -110,11 +109,11 @@ private func projectedPolygon<IndexScalar: VTKIntegerScalarValue>(
     let unitNormal = normal / normalLength
     let origin = polygon3D[0]
     let scale = polygon3D.reduce(0.0) { current, point in
-        max(current, simd_length(point - origin))
+        max(current, length(point - origin))
     }
     let planarityTolerance = max(1e-9, scale * 1e-6)
     for point in polygon3D {
-        let distance = abs(simd_dot(unitNormal, point - origin))
+        let distance = abs((unitNormal * (point - origin)).sum())
         guard distance <= planarityTolerance else {
             throw VTKWriter.Error.invalidCellLayout(
                 datasetPath: datasetPath,
@@ -263,6 +262,12 @@ private func newellNormal(_ points: [SIMD3<Double>]) -> SIMD3<Double> {
         normal.z += (current.x - next.x) * (current.y + next.y)
     }
     return normal
+}
+
+// Standard-library SIMD only. `simd` is Apple's module; off Apple that name can resolve to an
+// unrelated dependency's module, which then supplies or omits `simd_length` by accident.
+private func length(_ vector: SIMD3<Double>) -> Double {
+    (vector * vector).sum().squareRoot()
 }
 
 private func dominantAxis(of vector: SIMD3<Double>) -> Int {

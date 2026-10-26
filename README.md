@@ -397,6 +397,9 @@ try await writer.append(file: "frame_0001.vtp", timestep: 1.0, group: "default",
   arrays are chunked and compressed using the VTK XML compressor header format.
   Compressed headers and payloads are base64-encoded separately. ZLib blocks use
   RFC 1950 framing; LZ4 blocks use the raw format expected by VTK; LZMA uses XZ.
+  Off Apple platforms there is no Compression framework: ZLib is written as
+  stored (uncompressed) DEFLATE blocks that any zlib reader inflates, and LZ4
+  or LZMA throw `invalidCompressionConfiguration`.
 - `headerType` controls the binary length prefix size for inline binary and
   appended arrays. The package currently supports `UInt32` and `UInt64`.
 - `VTKXMLFileOptions` gives one place to control `byteOrder`, `headerType`,

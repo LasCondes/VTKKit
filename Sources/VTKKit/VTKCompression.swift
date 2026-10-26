@@ -1,4 +1,8 @@
+// Apple's Compression framework. Gated on Darwin rather than canImport(Compression), so that an
+// unrelated module of that name off Apple cannot select this path.
+#if canImport(Darwin)
 import Compression
+#endif
 import Foundation
 
 public struct VTKCompression: Sendable, Equatable, Codable {
@@ -7,6 +11,7 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         case lz4 = "vtkLZ4DataCompressor"
         case lzma = "vtkLZMADataCompressor"
 
+#if canImport(Darwin)
         var compressionAlgorithm: compression_algorithm {
             switch self {
             case .zlib:
@@ -17,6 +22,7 @@ public struct VTKCompression: Sendable, Equatable, Codable {
                 COMPRESSION_LZMA
             }
         }
+#endif
     }
 
     public var algorithm: Algorithm
@@ -46,6 +52,13 @@ public struct VTKCompression: Sendable, Equatable, Codable {
                 reason: "blockSize must be greater than zero."
             )
         }
+#if !canImport(Darwin)
+        guard algorithm == .zlib else {
+            throw VTKWriter.Error.invalidCompressionConfiguration(
+                reason: "\(algorithm.rawValue) needs Apple's Compression framework; use zlib on this platform."
+            )
+        }
+#endif
 
         let chunks = payload.chunked(maximumBlockSize: blockSize)
         var compressedChunks: [Data] = []
@@ -75,6 +88,7 @@ public struct VTKCompression: Sendable, Equatable, Codable {
         guard chunk.isEmpty == false else {
             return Data()
         }
+#if canImport(Darwin)
         if algorithm == .lz4 {
             // VTK uses raw LZ4 blocks, rather than Apple's framed LZ4 stream.
             // Apple's implementation needs additional working room beyond LZ4's
@@ -152,16 +166,44 @@ public struct VTKCompression: Sendable, Equatable, Codable {
             // the RFC 1950 header and Adler-32 trailer around each block.
             var framed = Data([0x78, 0x9c])
             framed.append(output)
-            var a: UInt32 = 1, b: UInt32 = 0
-            for byte in chunk {
-                a = (a + UInt32(byte)) % 65_521
-                b = (b + a) % 65_521
-            }
-            framed.appendInteger((b << 16) | a, byteOrder: .bigEndian)
+            framed.appendInteger(Self.adler32(chunk), byteOrder: .bigEndian)
             return framed
         }
 
         return output
+#else
+        // No Compression framework off Apple (encodedPayload already refused LZ4 and LZMA).
+        return Self.storedZlib(chunk)
+#endif
+    }
+
+    /// An RFC 1950 zlib stream of RFC 1951 stored (uncompressed) blocks, each at most 65,535
+    /// bytes. Any zlib reader, VTK's included, inflates it; it just saves no space.
+    static func storedZlib(_ chunk: Data) -> Data {
+        var framed = Data([0x78, 0x01])
+        var offset = chunk.startIndex
+        repeat {
+            let length = Swift.min(65_535, chunk.endIndex - offset)
+            let isFinal = offset + length == chunk.endIndex
+            framed.append(isFinal ? 0x01 : 0x00)
+            framed.append(contentsOf: [
+                UInt8(length & 0xff), UInt8(length >> 8),
+                UInt8(~length & 0xff), UInt8((~length >> 8) & 0xff),
+            ])
+            framed.append(chunk[offset..<(offset + length)])
+            offset += length
+        } while offset < chunk.endIndex
+        framed.appendInteger(adler32(chunk), byteOrder: .bigEndian)
+        return framed
+    }
+
+    private static func adler32(_ bytes: Data) -> UInt32 {
+        var a: UInt32 = 1, b: UInt32 = 0
+        for byte in bytes {
+            a = (a + UInt32(byte)) % 65_521
+            b = (b + a) % 65_521
+        }
+        return (b << 16) | a
     }
 }
 
