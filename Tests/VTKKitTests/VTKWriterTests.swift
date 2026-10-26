@@ -266,6 +266,54 @@ struct VTKWriterTests {
     }
 
     @Test
+    func storedZlibFramesShortChunk() {
+        // CMF/FLG, final stored block of 3 bytes (LEN, NLEN), payload, Adler-32 of "abc".
+        let framed = VTKCompression.storedZlib(Data("abc".utf8))
+        #expect(Array(framed) == [
+            0x78, 0x01, 0x01, 0x03, 0x00, 0xfc, 0xff, 0x61, 0x62, 0x63, 0x02, 0x4d, 0x01, 0x27,
+        ])
+    }
+
+    @Test
+    func storedZlibSplitsChunksBeyondOneStoredBlock() {
+        let chunk = Data((0..<70_000).map { UInt8(truncatingIfNeeded: $0) }).dropFirst(3)
+        let framed = Array(VTKCompression.storedZlib(chunk))
+        let tail = chunk.count - 65_535
+
+        #expect(framed.count == 2 + 2 * 5 + chunk.count + 4)
+        #expect(Array(framed[2..<7]) == [0x00, 0xff, 0xff, 0x00, 0x00])
+        let second = 7 + 65_535
+        #expect(Array(framed[second..<(second + 5)]) == [
+            0x01, UInt8(tail & 0xff), UInt8(tail >> 8), UInt8(~tail & 0xff), UInt8((~tail >> 8) & 0xff),
+        ])
+        #expect(Array(framed[(second + 5)..<(framed.count - 4)]) == Array(chunk.suffix(tail)))
+    }
+
+#if !canImport(Darwin)
+    @Test(arguments: [VTKCompression.Algorithm.lz4, .lzma])
+    func rejectsCompressorsWithoutAnEncoderOffApple(algorithm: VTKCompression.Algorithm) throws {
+        let vtk = VTKFile(
+            polyData: try PolyData.pointCloud(
+                points: [1.0 as Float, 2.0, 3.0],
+                format: .binary
+            ),
+            compression: VTKCompression(algorithm: algorithm)
+        )
+
+        let error = try requireWriterError {
+            _ = try VTKWriter.encode(vtk)
+        }
+
+        guard case let .invalidCompressionConfiguration(reason) = error else {
+            Issue.record("Unexpected error: \(error)")
+            return
+        }
+
+        #expect(reason.contains(algorithm.rawValue))
+    }
+#endif
+
+    @Test
     func encodesASCIIFromRawBinaryStorage() throws {
         let rawData = [1.0 as Float, 2.0, 3.0].withUnsafeBufferPointer { Data(buffer: $0) }
         let vtk = VTKFile(

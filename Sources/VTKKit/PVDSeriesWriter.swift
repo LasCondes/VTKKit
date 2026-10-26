@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 public extension PVDFile {
     static func load(from url: URL) throws(VTKWriter.Error) -> PVDFile {

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Build on Windows and other non-Apple platforms, carrying the 0.10.1 fixes
+  forward (see 0.10.1 below).
+
 ## 0.11.0 - 2026-10-06
 
 - Require Swift 6.4 and Xcode 27, while keeping Swift 6 language mode.
@@ -12,6 +17,20 @@
 This release raises deployment targets and the minimum Swift toolchain.
 Applications supporting earlier environments should stay on the 0.10.x line.
 The VTK document APIs and serialized formats are unchanged.
+
+## 0.10.1 — 2026-10-26
+
+- Build on Windows (and other non-Apple platforms).
+- Stop importing `simd`. Triangulation now uses standard-library `SIMD3`
+  arithmetic, so the build no longer depends on whichever module named `simd`
+  happens to be visible (off Apple, another dependency's module could satisfy
+  the import in one configuration and not another).
+- Gate Apple's Compression framework on Darwin. Elsewhere, zlib output is
+  stored DEFLATE blocks in RFC 1950 framing, readable by VTK but uncompressed;
+  LZ4 and LZMA throw `invalidCompressionConfiguration`.
+- Import `FoundationXML` for `XMLParser` where Foundation does not re-export it.
+
+No behaviour change on Apple platforms.
 
 ## 0.10.0 — 2026-10-03
 
