@@ -69,3 +69,29 @@ jobs:
             -derivedDataPath ".build/xcode-$PLATFORM" \
             CODE_SIGNING_ALLOWED=NO \
             -quiet
+
+  swift-63:
+    name: Swift 6.3 (${{ matrix.configuration }})
+    runs-on: ubuntu-24.04
+    container: swift:6.3.3-noble@sha256:1038d54c80063f5cdfabc4560990c30af64b5de8ebf28161deb22ca4ad5db866
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, release]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Report minimum toolchain
+        run: swift --version
+      - name: Install independent VTK reader runtime
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3-venv libgl1 libxrender1
+          python3 -m venv /tmp/vtkkit-readers
+          /tmp/vtkkit-readers/bin/python -m pip install --only-binary=:all: -r Tests/requirements-vtk.txt
+          /tmp/vtkkit-readers/bin/python -c 'import numpy, vtk; print("VTK", vtk.vtkVersion.GetVTKVersion())'
+      - name: Run portable tests
+        env:
+          CONFIGURATION: ${{ matrix.configuration }}
+          VTKKIT_PYTHON: /tmp/vtkkit-readers/bin/python
+        run: swift test --configuration "$CONFIGURATION"

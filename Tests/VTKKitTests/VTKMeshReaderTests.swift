@@ -4,19 +4,28 @@ import VTKKit
 
 @Suite("VTK reader compatibility")
 struct VTKMeshReaderTests {
-    static let options: [VTKXMLFileOptions] = [
-        .init(dataArrayFormat: .ascii),
-        .init(byteOrder: .bigEndian, dataArrayFormat: .ascii),
-        .init(dataArrayFormat: .binary),
-        .init(byteOrder: .bigEndian, headerType: .uInt64, compression: .zlib, dataArrayFormat: .binary),
-        .init(headerType: .uInt64, compression: .zlib, dataArrayFormat: .appended),
-        .init(compression: .init(algorithm: .zlib, blockSize: 16), dataArrayFormat: .binary),
-        .init(byteOrder: .bigEndian, headerType: .uInt64, compression: .lz4, dataArrayFormat: .appended),
-        .init(compression: .init(algorithm: .lz4, blockSize: 16), dataArrayFormat: .binary),
-        .init(headerType: .uInt64, compression: .lzma, dataArrayFormat: .appended),
-        .init(byteOrder: .bigEndian, compression: .init(algorithm: .lzma, blockSize: 16), dataArrayFormat: .binary),
-        .init(headerType: .uInt64, dataArrayFormat: .appended)
-    ]
+    static let options: [VTKXMLFileOptions] = {
+        var options: [VTKXMLFileOptions] = [
+            .init(dataArrayFormat: .ascii),
+            .init(byteOrder: .bigEndian, dataArrayFormat: .ascii),
+            .init(dataArrayFormat: .binary),
+            .init(byteOrder: .bigEndian, headerType: .uInt64, compression: .zlib, dataArrayFormat: .binary),
+            .init(headerType: .uInt64, compression: .zlib, dataArrayFormat: .appended),
+            .init(compression: .init(algorithm: .zlib, blockSize: 16), dataArrayFormat: .binary)
+        ]
+        // LZ4/LZMA encoding uses Apple's Compression framework. Unsupported-platform
+        // refusals are covered separately by rejectsCompressorsWithoutAnEncoderOffApple.
+        #if canImport(Darwin)
+        options += [
+            .init(byteOrder: .bigEndian, headerType: .uInt64, compression: .lz4, dataArrayFormat: .appended),
+            .init(compression: .init(algorithm: .lz4, blockSize: 16), dataArrayFormat: .binary),
+            .init(headerType: .uInt64, compression: .lzma, dataArrayFormat: .appended),
+            .init(byteOrder: .bigEndian, compression: .init(algorithm: .lzma, blockSize: 16), dataArrayFormat: .binary)
+        ]
+        #endif
+        options.append(.init(headerType: .uInt64, dataArrayFormat: .appended))
+        return options
+    }()
 
     @Test(.enabled(if: pythonHasVTK(), "Set VTKKIT_PYTHON to a Python interpreter with vtk installed"), arguments: options)
     func readsGeometryFieldsTimeAndOrientation(options: VTKXMLFileOptions) throws {

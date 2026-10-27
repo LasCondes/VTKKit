@@ -5,26 +5,27 @@ parallel PolyData (`.pvtp`), UnstructuredGrid (`.vtu`), parallel
 UnstructuredGrid (`.pvtu`), and PVD collection (`.pvd`) files without taking a
 dependency on a larger engine or app codebase.
 
-The package requires Swift 6.4 and uses plain Swift value types for the document
+The package requires Swift 6.3 and uses plain Swift value types for the document
 model. Those types are `Codable`, but XML emission stays custom because VTK XML
 does not map cleanly onto Foundation's `Codable` support without adding an XML
 encoder dependency.
 
 ## Requirements
 
-- Swift 6.4 or later, using Swift 6 language mode
-- Xcode 27 or later for Apple platform builds
-- macOS 27, iOS/iPadOS 27, tvOS 27, watchOS 27, or visionOS 27 or later
+- Swift 6.3 or later, using Swift 6 language mode
+- An Xcode toolchain providing Swift 6.3 or later for Apple platform builds
+- macOS 26, iOS/iPadOS 26, tvOS 26, watchOS 26, or visionOS 26 or later
 
-These minimums apply starting with VTKKit 0.11.0. Applications supporting earlier
-toolchains or operating systems can use the 0.10.x release line.
+These minimums apply starting with VTKKit 0.11.2. Versions 0.11.0 and 0.11.1
+required Swift 6.4 and Apple platform version 27. Applications supporting earlier
+environments can use the 0.10.x release line.
 
 ## Installation
 
 Add the package to your Swift package dependencies:
 
 ```swift
-.package(url: "https://github.com/LasCondes/VTKKit.git", from: "0.11.0")
+.package(url: "https://github.com/LasCondes/VTKKit.git", from: "0.11.2")
 ```
 
 Then add `VTKKit` to the consuming target's dependencies, or add the same
@@ -462,6 +463,8 @@ compatibility fixes and stricter validation behavior.
 
 GitHub Actions runs debug and release tests on macOS 27 with Xcode 27. It installs
 the VTK Python runtime and checks that it imports before running the suite, so
-the VTK reader checks are exercised in CI. Separate jobs compile the library for
-iOS, tvOS, watchOS, and visionOS. ParaView checks remain optional until `pvpython`
-is available on the runner.
+the VTK reader checks are exercised in CI. Separate jobs compile the library with
+deployment targets of 26 for iOS, tvOS, watchOS, and visionOS. Linux jobs test the
+minimum Swift 6.3 toolchain in debug and release configurations, also with the
+independent VTK readers. ParaView checks remain optional until `pvpython` is
+available on the runner.

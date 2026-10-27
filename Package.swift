@@ -1,14 +1,14 @@
-// swift-tools-version: 6.4
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
     name: "VTKKit",
     platforms: [
-        .macOS(.v27),
-        .iOS(.v27),
-        .tvOS(.v27),
-        .watchOS(.v27),
-        .visionOS(.v27),
+        .macOS(.v26),
+        .iOS(.v26),
+        .tvOS(.v26),
+        .watchOS(.v26),
+        .visionOS(.v26),
     ],
     products: [
         .library(

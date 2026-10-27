@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.2 - 2026-10-27
+
+- Lower the minimum Swift tools version to 6.3 and all supported Apple deployment
+  targets to 26, restoring compatibility without changing library implementation,
+  public APIs or VTK file formats.
+- Keep the Xcode 27 reader-backed tests and platform builds, and add debug/release
+  reader-backed CI coverage using Swift 6.3 on Linux.
+- Limit positive Linux reader fixtures to its supported compressors, preserving
+  all Apple compressor fixtures and explicit unsupported-compressor rejection tests.
+- Validation: 43 macOS tests and 44 Swift 6.3.3 Linux tests pass in both debug and
+  release with independent VTK 9.7.1 readers; all five Apple platform builds declare
+  a 26.0 minimum. Library implementation files are unchanged.
+
 ## 0.11.1 - 2026-10-26
 
 - Build on Windows and other non-Apple platforms, carrying the 0.10.1 fixes
