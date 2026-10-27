@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.1 - 2026-10-26
 
 - Build on Windows and other non-Apple platforms, carrying the 0.10.1 fixes
   forward (see 0.10.1 below).
